@@ -24,23 +24,230 @@ function displayArticlePreview(article) {
   // Create extraction method badge
   const extractionBadge = getExtractionBadge(article.extractionMethod);
   
+  // Process content for preview
+  const sanitizedData = sanitizeContentForPreview(article.content);
+  const contentLength = article.content ? article.content.length : 0;
+  const wordCount = article.wordCount || estimateWordCount(article.content);
+  
+  // Create stats
+  const stats = [
+    { label: 'Characters', value: contentLength },
+    { label: 'Words', value: wordCount },
+    { label: 'Images', value: article.images ? article.images.length : 0 }
+  ];
+  
+  if (article.parseTime) {
+    stats.push({ label: 'Parse Time', value: `${article.parseTime}ms` });
+  }
+  
+  const statsHtml = stats.map(stat => 
+    `<div class="stat-item"><strong>${stat.value}</strong> ${stat.label}</div>`
+  ).join('');
+  
   previewEl.innerHTML = `
     <h3>${article.title || 'No Title'}</h3>
     <div style="margin: 10px 0;">${extractionBadge}</div>
-    <p><strong>Author:</strong> ${article.author || 'Unknown'}</p>
-    <p><strong>Publish Time:</strong> ${article.publishTime || 'Unknown'}</p>
-    <p><strong>Digest:</strong> ${article.digest || 'No digest'}</p>
-    <p><strong>Images:</strong> ${article.images ? article.images.length : 0}</p>
-    <p><strong>Content Length:</strong> ${article.content ? article.content.length : 0} characters</p>
-    ${article.wordCount ? `<p><strong>Word Count:</strong> ${article.wordCount}</p>` : ''}
+    
+    <div class="content-stats">
+      ${statsHtml}
+    </div>
+    
+    ${article.author ? `<p><strong>Author:</strong> ${article.author}</p>` : ''}
+    ${article.publishTime ? `<p><strong>Publish Time:</strong> ${article.publishTime}</p>` : ''}
+    ${article.digest ? `<p><strong>Digest:</strong> ${article.digest}</p>` : ''}
     ${article.domain ? `<p><strong>Domain:</strong> ${article.domain}</p>` : ''}
-    ${article.parseTime ? `<p><strong>Parse Time:</strong> ${article.parseTime}ms</p>` : ''}
+    
+    ${contentLength > 0 ? `
+      <div style="margin: 10px 0;">
+        <div style="background: white; border: 1px solid #e1e5e9; border-radius: 4px; padding: 10px; margin: 8px 0;">
+          <div style="font-weight: bold; font-size: 12px; color: #495057; margin-bottom: 6px;">📖 Content Preview</div>
+          <div style="font-size: 12px; line-height: 1.4; color: #6c757d;">
+            ${getContentSummary(article.content)}
+          </div>
+        </div>
+        <button class="content-toggle" id="content-toggle-btn">
+          📖 Show Full Content
+        </button>
+      </div>
+      
+      <div id="content-preview-area" style="display: none;">
+        <div class="content-preview">
+          <div id="preview-content-container">
+            ${sanitizedData.content}
+          </div>
+          ${sanitizedData.isTruncated ? `
+            <div style="text-align: center; margin-top: 15px; padding: 10px; background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 4px;">
+              <p style="margin: 5px 0; color: #0066cc; font-size: 12px;">
+                ⚠️ 内容已截断显示（当前显示: 10,000 字符，总长度: ${sanitizedData.fullLength.toLocaleString()} 字符）
+              </p>
+              <button id="show-full-content-btn" style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                显示完整内容
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    ` : `
+      <div style="margin: 10px 0; padding: 10px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; color: #721c24; font-size: 12px;">
+        ⚠️ No content extracted from this page
+      </div>
+    `}
+    
+    ${article.images && article.images.length > 0 ? `
+      <details style="margin-top: 10px;">
+        <summary style="cursor: pointer; font-weight: bold; font-size: 12px;">📷 Images (${article.images.length})</summary>
+        <div style="margin-top: 8px;">
+          ${article.images.slice(0, 3).map(img => `
+            <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 3px; font-size: 11px;">
+              <div><strong>Source:</strong> ${truncateText(img.src, 50)}</div>
+              ${img.alt ? `<div><strong>Alt:</strong> ${truncateText(img.alt, 40)}</div>` : ''}
+            </div>
+          `).join('')}
+          ${article.images.length > 3 ? `<p style="font-size: 11px; color: #6c757d;">... and ${article.images.length - 3} more images</p>` : ''}
+        </div>
+      </details>
+    ` : ''}
+    
     <details style="margin-top: 10px;">
-      <summary style="cursor: pointer; font-weight: bold;">Debug Info</summary>
-      <pre style="font-size: 10px; background: #f5f5f5; padding: 5px; border-radius: 3px; margin-top: 5px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${JSON.stringify({...article, content: article.content ? article.content.substring(0, 500) + '...[truncated]' : ''}, null, 2)}</pre>
+      <summary style="cursor: pointer; font-weight: bold; font-size: 12px;">🔧 Debug Info</summary>
+      <pre style="font-size: 10px; background: #f5f5f5; padding: 5px; border-radius: 3px; margin-top: 5px; white-space: pre-wrap; max-height: 150px; overflow-y: auto;">${JSON.stringify({...article, content: article.content ? `[${article.content.length} characters]` : ''}, null, 2)}</pre>
     </details>
   `;
   document.getElementById('preview-section').style.display = 'block';
+  
+  // 事件已通过全局事件委托处理，无需额外绑定
+}
+
+// 切换内容预览的函数
+function toggleContentPreview() {
+  const previewArea = document.getElementById('content-preview-area');
+  const toggleBtn = document.getElementById('content-toggle-btn');
+  
+  if (previewArea && toggleBtn) {
+    if (previewArea.style.display === 'none') {
+      previewArea.style.display = 'block';
+      toggleBtn.textContent = '📖 Hide Full Content';
+    } else {
+      previewArea.style.display = 'none';
+      toggleBtn.textContent = '📖 Show Full Content';
+    }
+  }
+}
+
+// 显示完整内容的函数
+function showFullContent() {
+  if (window.currentArticle && window.currentArticle.content) {
+    const container = document.getElementById('preview-content-container');
+    const showBtn = document.getElementById('show-full-content-btn');
+    
+    if (container && showBtn) {
+      // 显示完整内容（不截断）
+      const fullData = sanitizeContentForPreview(window.currentArticle.content, false);
+      container.innerHTML = fullData.content;
+      
+      // 隐藏按钮和警告信息
+      showBtn.parentElement.style.display = 'none';
+      
+      // 显示加载完成提示
+      const successMsg = document.createElement('div');
+      successMsg.style.cssText = 'text-align: center; margin-top: 10px; padding: 8px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; color: #155724; font-size: 12px;';
+      successMsg.innerHTML = '✅ 完整内容已加载完成';
+      container.parentElement.appendChild(successMsg);
+      
+      // 3秒后自动隐藏成功提示
+      setTimeout(() => {
+        if (successMsg.parentElement) {
+          successMsg.parentElement.removeChild(successMsg);
+        }
+      }, 3000);
+    }
+  }
+}
+
+// 获取内容摘要
+function getContentSummary(content) {
+  if (!content) return 'No content available';
+  
+  // 移除HTML标签，获取纯文本
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = content;
+  
+  // 移除脚本和样式
+  const scripts = tempDiv.querySelectorAll('script, style, noscript');
+  scripts.forEach(el => el.remove());
+  
+  const textContent = tempDiv.textContent || tempDiv.innerText || '';
+  
+  // 获取前200个字符作为摘要
+  let summary = textContent.trim().substring(0, 200);
+  
+  // 如果内容被截断，添加省略号
+  if (textContent.length > 200) {
+    // 尝试在句号、问号或感叹号处截断
+    const lastSentenceEnd = Math.max(
+      summary.lastIndexOf('。'),
+      summary.lastIndexOf('！'),
+      summary.lastIndexOf('？'),
+      summary.lastIndexOf('.'),
+      summary.lastIndexOf('!'),
+      summary.lastIndexOf('?')
+    );
+    
+    if (lastSentenceEnd > 100) {
+      summary = summary.substring(0, lastSentenceEnd + 1);
+    } else {
+      summary += '...';
+    }
+  }
+  
+  return summary || 'No readable content found';
+}
+
+// 净化内容用于预览显示
+function sanitizeContentForPreview(content, truncate = true) {
+  if (!content) return { content: '', isTruncated: false, fullLength: 0 };
+  
+  // 创建临时div来处理HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = content;
+  
+  // 移除脚本和样式标签
+  const scripts = tempDiv.querySelectorAll('script, style, noscript');
+  scripts.forEach(el => el.remove());
+  
+  let processedContent = tempDiv.innerHTML;
+  const fullLength = processedContent.length;
+  let isTruncated = false;
+  
+  // 如果内容太长且需要截断，截取前面部分
+  if (truncate && processedContent.length > 10000) {
+    processedContent = processedContent.substring(0, 10000);
+    isTruncated = true;
+  }
+  
+  return { 
+    content: processedContent, 
+    isTruncated: isTruncated, 
+    fullLength: fullLength 
+  };
+}
+
+// 估算字数
+function estimateWordCount(content) {
+  if (!content) return 0;
+  
+  // 移除HTML标签
+  const textContent = content.replace(/<[^>]*>/g, '');
+  
+  // 分割单词（支持中英文）
+  const words = textContent.match(/[\u4e00-\u9fa5]|[a-zA-Z]+/g);
+  return words ? words.length : 0;
+}
+
+// 截断文本
+function truncateText(text, maxLength) {
+  if (!text || text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
 }
 
 function getExtractionBadge(method) {
@@ -183,6 +390,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!data.strapiUrl || !data.token || !data.collection) {
       updateStatus('Please configure Strapi settings first', true);
       document.getElementById('config-warning').style.display = 'block';
+    }
+  });
+  
+  // 使用事件委托来处理动态生成的按钮点击
+  // 这是一个更安全的方法，避免CSP问题
+  document.addEventListener('click', (event) => {
+    if (event.target && event.target.id === 'content-toggle-btn') {
+      event.preventDefault();
+      toggleContentPreview();
+    }
+    
+    // 处理显示完整内容按钮
+    if (event.target && event.target.id === 'show-full-content-btn') {
+      event.preventDefault();
+      showFullContent();
     }
   });
 });
