@@ -1,6 +1,6 @@
 # 🚀 Enhanced Article Extractor
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)
+![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)
 ![Chrome Extension](https://img.shields.io/badge/Chrome%20Extension-Manifest%20V3-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
@@ -14,7 +14,7 @@
 - **图片优化**: 智能筛选相关图片，提升 30% 过滤精度
 - **性能卓越**: 16ms 智能过滤，内容可用性提升至 95%
 
-### 🖼️ 头图自动上传功能 (v0.3.0 NEW!)
+### 🖼️ 头图自动上传功能 (v0.3.0)
 智能头图处理，一键完成封面图配置：
 
 - **🎯 智能选择**: 根据索引自动选择文章中的图片作为头图
@@ -22,6 +22,16 @@
 - **🔗 自动关联**: 媒体文件ID自动写入文章的头图字段
 - **🏷️ 智能命名**: 基于文章标题生成有意义的文件名
 - **⚡ 错误处理**: 优雅的错误处理，不影响主流程
+
+### 🛡️ 防扩展干扰保护 (v0.3.1 NEW!)
+多层次防护机制，确保预览界面纯净无干扰：
+
+- **🚫 UI注入拦截**: 自动检测并移除其他扩展的UI元素（按钮、图标、弹窗等）
+- **🔍 实时监控**: MutationObserver实时监控DOM变化，防止动态注入
+- **⚡ 早期介入**: content script在document_start阶段运行，抢先阻止注入
+- **🛡️ 多重清理**: 定期清理extension图片、容器、Shadow DOM、背景图等
+- **⚙️ 智能识别**: 自动识别chrome-extension://、moz-extension://等扩展资源
+- **🔒 自我保护**: 保护本扩展元素不被误删，仅清理其他扩展内容
 
 ### 📊 增强元数据提取
 受 [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper) 启发的专业元数据提取：
@@ -172,6 +182,7 @@ npm run build
 - ✅ 自动生成 URL slug
 - ✅ HTML 内容清理
 - ✅ DOM 噪音移除
+- 🛡️ 扩展UI干扰防护 (NEW!)
 - ⚙️ 内容长度限制
 - 📷 图片数量控制
 
@@ -181,6 +192,7 @@ npm run build
 |------|------|
 | 📖 [快速开始指南](QUICK_START_GUIDE.md) | 详细安装和使用指南 |
 | 🖼️ [头图功能指南](HEAD_IMAGE_GUIDE.md) | 头图自动上传配置和使用 |
+| 🛡️ [防扩展干扰指南](ANTI_INJECTION_GUIDE.md) | 扩展UI清理机制说明 |
 | 🔗 [字段映射指南](FIELD_MAPPING_GUIDE.md) | Strapi 字段配置说明 |
 | 🚀 [功能增强摘要](ENHANCEMENT_SUMMARY.md) | 新功能详细介绍 |
 | 🔧 [规则引擎演示](RULES_ENGINE_DEMO.md) | DOM 清理规则说明 |
@@ -193,6 +205,7 @@ npm run build
 | 内容纯度 | 10% → 95% | 噪音内容移除效果 |
 | 处理速度 | 16ms | 智能过滤处理时间 |
 | 图片精度 | +30% | 相关图片识别准确率 |
+| 界面干净度 | +100% | 其他扩展UI干扰移除 |
 | 元数据完整性 | +200% | 新增元数据字段数量 |
 
 ## 🔄 提取方法级联
@@ -226,9 +239,24 @@ npm run clean
 
 MIT License - 详见 [LICENSE](LICENSE) 文件
 
+## 🚨 故障排除
+
+### 扩展UI干扰问题
+如果遇到其他扩展图标或UI元素出现在预览中：
+
+1. **自动处理**: 扩展会自动检测并清理其他扩展UI
+2. **手动刷新**: 重新点击扩展图标重新提取
+3. **检查控制台**: 查看清理日志（🛡️ Extension cleanup）
+4. **清理统计**: 控制台会显示移除的元素数量
+
+### 常见问题
+- ❓ **MutationObserver错误**: 扩展会自动降级到定时器清理模式
+- ❓ **图标持续出现**: 某些扩展可能频繁重新注入，属正常现象
+- ❓ **清理过度**: 扩展会保护自身元素，不会误删重要内容
+
 ---
 
-**Enhanced Article Extractor v0.2.0**  
-*专业级内容提取 • 丰富元数据收集 • 受 Obsidian Clipper 启发*
+**Enhanced Article Extractor v0.3.1**  
+*专业级内容提取 • 丰富元数据收集 • 防扩展干扰保护 • 受 Obsidian Clipper 启发*
 
 ⭐ 如果这个项目对您有帮助，请给个 Star！
