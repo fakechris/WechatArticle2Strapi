@@ -1,3 +1,4 @@
+/******/ (() => { // webpackBootstrap
 // 上传图片到Strapi媒体库
 async function uploadImageToStrapi(imageDataUrl, filename) {
   const config = await chrome.storage.sync.get(['strapiUrl', 'token']);
@@ -505,3 +506,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 保持消息通道开放
   }
 });
+
+/******/ })()
+;

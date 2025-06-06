@@ -1,0 +1,22 @@
+{
+  "name": "wechatarticle2strapi",
+  "version": "1.0.0",
+  "description": "A Chrome extension that converts WeChat articles into entries in a Strapi CMS. This project follows the requirements outlined in [`PRD.md`](PRD.md).",
+  "main": "RESET_SETTINGS.js",
+  "scripts": {
+    "build": "webpack",
+    "dev": "webpack --mode=development --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "defuddle": "^0.6.4"
+  },
+  "devDependencies": {
+    "copy-webpack-plugin": "^13.0.0",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
+  }
+}
