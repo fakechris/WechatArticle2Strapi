@@ -73,7 +73,9 @@ function getFieldMapping() {
       language: document.getElementById('languageField').value.trim(),
       tags: document.getElementById('tagsField').value.trim(),
       readingTime: document.getElementById('readingTimeField').value.trim(),
-      created: document.getElementById('createdField').value.trim()
+      created: document.getElementById('createdField').value.trim(),
+      // 🔥 新增：头图字段
+      headImg: document.getElementById('headImgField').value.trim()
     }
   };
 }
@@ -126,7 +128,10 @@ function getAdvancedSettings() {
     maxImageWidth: parseInt(document.getElementById('maxImageWidth').value) || 1200,
     maxImageHeight: parseInt(document.getElementById('maxImageHeight').value) || 800,
     smartImageReplace: document.getElementById('smartImageReplace').checked,
-    retryFailedImages: document.getElementById('retryFailedImages').checked
+    retryFailedImages: document.getElementById('retryFailedImages').checked,
+    // 🔥 新增：头图设置
+    uploadHeadImg: document.getElementById('uploadHeadImg').checked,
+    headImgIndex: parseInt(document.getElementById('headImgIndex').value) || 0
   };
 }
 
@@ -180,7 +185,9 @@ function load() {
         language: '',
         tags: '',
         readingTime: '',
-        created: ''
+        created: '',
+        // 🔥 新增：头图字段
+        headImg: ''
       }
     },
     fieldPresets: {
@@ -202,7 +209,10 @@ function load() {
       maxImageWidth: 1200,
       maxImageHeight: 800,
       smartImageReplace: true,
-      retryFailedImages: true
+      retryFailedImages: true,
+      // 🔥 新增：头图相关设置
+      uploadHeadImg: false,
+      headImgIndex: 0
     }
   };
   
@@ -235,6 +245,8 @@ function load() {
     document.getElementById('tagsField').value = fieldMapping.fields.tags || '';
     document.getElementById('readingTimeField').value = fieldMapping.fields.readingTime || '';
     document.getElementById('createdField').value = fieldMapping.fields.created || '';
+    // 🔥 新增：头图字段
+    document.getElementById('headImgField').value = fieldMapping.fields.headImg || '';
     
     // 高级设置
     const advancedSettings = data.advancedSettings || defaultSettings.advancedSettings;
@@ -254,6 +266,13 @@ function load() {
     document.getElementById('maxImageHeight').value = advancedSettings.maxImageHeight || 800;
     document.getElementById('smartImageReplace').checked = advancedSettings.smartImageReplace !== false;
     document.getElementById('retryFailedImages').checked = advancedSettings.retryFailedImages !== false;
+    
+    // 🔥 新增：头图设置
+    document.getElementById('uploadHeadImg').checked = advancedSettings.uploadHeadImg || false;
+    document.getElementById('headImgIndex').value = advancedSettings.headImgIndex || 0;
+    
+    // 初始化头图配置显示状态
+    toggleHeadImgConfig();
     
     // 规则引擎设置
     document.getElementById('enableCleanupRules').checked = data.enableCleanupRules !== false; // 默认启用
@@ -743,4 +762,21 @@ document.addEventListener('DOMContentLoaded', function() {
       removePresetFieldRow(event.target);
     }
   });
+  
+  // 🔥 新增：头图配置切换事件监听器
+  document.getElementById('uploadHeadImg').addEventListener('change', toggleHeadImgConfig);
 });
+
+// 🔥 新增：切换头图配置显示
+function toggleHeadImgConfig() {
+  const uploadHeadImg = document.getElementById('uploadHeadImg').checked;
+  const configSection = document.getElementById('headImgConfig');
+  
+  if (configSection) {
+    if (uploadHeadImg) {
+      configSection.style.display = 'block';
+    } else {
+      configSection.style.display = 'none';
+    }
+  }
+}

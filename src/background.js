@@ -172,7 +172,9 @@ function validateArticleData(article, fieldMapping, advancedSettings, fieldPrese
       language: '',
       tags: '',
       readingTime: '',
-      created: ''
+      created: '',
+      // 🔥 新增：头图字段
+      headImg: ''
     };
   }
   
@@ -235,6 +237,12 @@ function validateArticleData(article, fieldMapping, advancedSettings, fieldPrese
   // 图片字段 - 只有在映射了有效字段名时才添加
   if (article.processedImages && article.processedImages.length > 0 && fieldMap.images && fieldMap.images.trim()) {
     data[fieldMap.images] = article.processedImages;
+  }
+
+  // 🔥 新增：头图字段处理 - media 类型，存储媒体文件 ID
+  if (article.headImageId && fieldMap.headImg && fieldMap.headImg.trim()) {
+    data[fieldMap.headImg] = article.headImageId;
+    console.log(`🖼️ 设置头图: ${fieldMap.headImg} = ${article.headImageId}`);
   }
   
     // Slug字段 - 如果启用自动生成且映射了有效字段名
@@ -444,7 +452,11 @@ async function sendToStrapi(article) {
       fieldMappingEnabled: config.fieldMapping?.enabled,
       fieldMappingFields: config.fieldMapping?.fields,
       fieldPresetsEnabled: config.fieldPresets?.enabled,
-      fieldPresetsCount: config.fieldPresets?.presets ? Object.keys(config.fieldPresets.presets).length : 0
+      fieldPresetsCount: config.fieldPresets?.presets ? Object.keys(config.fieldPresets.presets).length : 0,
+      // 🔥 新增：头图配置调试信息
+      uploadHeadImg: config.advancedSettings?.uploadHeadImg,
+      headImgIndex: config.advancedSettings?.headImgIndex,
+      headImgField: config.fieldMapping?.fields?.headImg
     });
     
     // 验证配置
@@ -460,13 +472,39 @@ async function sendToStrapi(article) {
       maxImages: 10,
       generateSlug: true,
       uploadImages: true,
-      sanitizeContent: true
+      sanitizeContent: true,
+      // 🔥 新增：头图相关设置
+      uploadHeadImg: false,
+      headImgIndex: 0
     };
     
-    // 处理图片（如果启用）
+    // 🔥 新增：头图配置详细调试
+    console.log('🖼️ 头图配置检查:', {
+      uploadHeadImg: advancedSettings.uploadHeadImg,
+      headImgIndex: advancedSettings.headImgIndex,
+      hasImages: !!article.images,
+      imageCount: article.images ? article.images.length : 0,
+      headImgField: fieldMapping.fields?.headImg
+    });
+    
+    // 🔥 新增：处理头图（如果启用）
     let processedArticle = article;
+    if (advancedSettings.uploadHeadImg) {
+      console.log('🖼️ 头图上传功能已启用，开始处理...');
+      processedArticle = await processHeadImage(processedArticle, advancedSettings);
+      console.log('🖼️ 头图处理结果:', {
+        hasHeadImageId: !!processedArticle.headImageId,
+        headImageId: processedArticle.headImageId,
+        hasHeadImageError: !!processedArticle.headImageError,
+        headImageError: processedArticle.headImageError
+      });
+    } else {
+      console.log('📷 头图上传功能未启用，跳过头图处理');
+    }
+    
+    // 处理图片（如果启用）
     if (advancedSettings.uploadImages) {
-      processedArticle = await processArticleImages(article);
+      processedArticle = await processArticleImages(processedArticle);
     }
     
     // 验证和格式化数据
@@ -973,4 +1011,127 @@ async function smartReplaceImageInContent(content, originalUrl, newUrl) {
 // 辅助函数：转义正则表达式特殊字符
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 🔥 新增：处理头图上传
+async function processHeadImage(article, advancedSettings) {
+  console.log('🖼️ 开始处理头图...');
+  
+  // 检查是否启用头图功能且有图片可处理
+  if (!advancedSettings.uploadHeadImg || !article.images || article.images.length === 0) {
+    console.log('📷 头图功能未启用或无图片，跳过头图处理');
+    return article;
+  }
+  
+  // 获取头图配置
+  const headImgIndex = advancedSettings.headImgIndex || 0; // 默认使用第一张图片
+  const targetImage = article.images[headImgIndex];
+  
+  if (!targetImage) {
+    console.log(`⚠️ 无法找到索引为 ${headImgIndex} 的图片，跳过头图处理`);
+    return article;
+  }
+  
+  console.log(`🎯 选择第 ${headImgIndex + 1} 张图片作为头图: ${targetImage.src.substring(0, 60)}...`);
+  
+  try {
+    // 验证图片URL是否有效
+    if (!isValidImageUrlForUpload(targetImage.src)) {
+      throw new Error(`头图URL无效: ${targetImage.src.substring(0, 60)}...`);
+    }
+    
+    // 分析图片信息
+    const imageInfo = await analyzeImageInfo(targetImage.src);
+    
+    // 下载图片
+    const tab = await chrome.tabs.query({ active: true, currentWindow: true });
+    const imageData = await chrome.tabs.sendMessage(tab[0].id, {
+      type: 'downloadImage',
+      url: targetImage.src,
+      enableCompression: advancedSettings.enableImageCompression !== false,
+      quality: advancedSettings.imageQuality || 0.8,
+      maxWidth: 1200,
+      maxHeight: 800
+    });
+    
+    if (!imageData || !imageData.success) {
+      throw new Error(`头图下载失败: ${imageData?.error || '未知错误'}`);
+    }
+    
+    // 生成头图文件名
+    const filename = generateHeadImageFilename(article.title, imageInfo);
+    
+    // 上传头图到Strapi媒体库
+    console.log(`📤 上传头图到Strapi: ${filename}`);
+    const uploadResult = await uploadImageToStrapiAdvanced(imageData.dataUrl, filename, {
+      ...imageInfo,
+      isHeadImage: true,
+      articleTitle: article.title
+    });
+    
+    if (!uploadResult || !uploadResult[0]) {
+      throw new Error('头图上传返回空结果');
+    }
+    
+    const uploadedFile = uploadResult[0];
+    console.log(`✨ 头图上传成功: ${uploadedFile.name} (ID: ${uploadedFile.id})`);
+    
+    // 返回包含头图信息的文章对象
+    return {
+      ...article,
+      headImageId: uploadedFile.id,
+      headImageUrl: uploadedFile.url,
+      headImageInfo: {
+        id: uploadedFile.id,
+        url: uploadedFile.url,
+        filename: uploadedFile.name,
+        size: uploadedFile.size,
+        mimeType: uploadedFile.mime,
+        width: uploadedFile.width,
+        height: uploadedFile.height,
+        originalUrl: targetImage.src,
+        uploadedAt: new Date().toISOString()
+      }
+    };
+    
+  } catch (error) {
+    console.error(`❌ 头图处理失败:`, error);
+    
+    // 头图处理失败不应该中断整个流程，只记录错误
+    console.log('⚠️ 头图处理失败，继续处理文章的其他部分');
+    return {
+      ...article,
+      headImageError: error.message
+    };
+  }
+}
+
+// 🔥 新增：生成头图文件名
+function generateHeadImageFilename(articleTitle, imageInfo) {
+  const timestamp = Date.now();
+  const randomId = Math.random().toString(36).substr(2, 6);
+  
+  // 基于文章标题生成有意义的文件名
+  let baseName = 'head-img';
+  
+  if (articleTitle) {
+    // 简化标题作为文件名的一部分
+    const titleSlug = articleTitle
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '') // 移除特殊字符
+      .replace(/\s+/g, '-') // 空格替换为连字符
+      .substring(0, 20); // 限制长度
+    
+    if (titleSlug.length > 3) {
+      baseName = `head-img-${titleSlug}`;
+    }
+  }
+  
+  // 添加时间戳和随机ID确保唯一性
+  baseName += `-${timestamp}-${randomId}`;
+  
+  // 确定文件扩展名
+  const extension = imageInfo.extension || 'jpg';
+  
+  return `${baseName}.${extension}`;
 }

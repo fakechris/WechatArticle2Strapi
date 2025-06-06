@@ -318,6 +318,17 @@
               <div class="help-text" style="font-size: 11px;">Timestamp when content was extracted</div>
             </div>
           </div>
+          
+          <div style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-left: 4px solid #0ea5e9; border-radius: 4px;">
+            <h4 style="margin: 0 0 10px 0; color: #0ea5e9;">🖼️ Head Image Field (Media Type)</h4>
+            <div class="help-text" style="margin-bottom: 10px;">Configure head image (cover image) field for articles</div>
+            
+            <div class="form-row">
+              <label>Head Image → <span class="field-type-badge">Media</span></label>
+              <input type="text" id="headImgField" placeholder="head_img" />
+              <div class="help-text" style="font-size: 11px;">Media field to store the article's cover image (will store media file ID)</div>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -370,6 +381,30 @@
         <div class="toggle-section">
           <input type="checkbox" id="uploadImages" checked />
           <label for="uploadImages">Upload images to Strapi</label>
+        </div>
+        
+        <!-- 🔥 新增：头图上传配置 -->
+        <div class="toggle-section">
+          <input type="checkbox" id="uploadHeadImg" />
+          <label for="uploadHeadImg">自动上传文章头图</label>
+          <div class="help-text">自动选择文章中的图片作为头图上传到Strapi</div>
+        </div>
+        
+        <div id="headImgConfig" style="margin-left: 20px; padding: 10px; background: #fff8e1; border-left: 4px solid #ff9800; border-radius: 4px; display: none;">
+          <h4 style="margin: 0 0 10px 0; color: #ff9800;">🎯 头图选择配置</h4>
+          
+          <div class="form-row">
+            <label>头图选择索引</label>
+            <input type="number" id="headImgIndex" value="0" min="0" max="20" />
+            <div class="help-text">选择第几张图片作为头图 (0表示第1张，1表示第2张...)</div>
+          </div>
+          
+          <div style="margin-top: 10px; padding: 8px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; font-size: 12px; color: #e65100;">
+            <strong>💡 提示：</strong>
+            <div>• 确保在"字段映射"中配置了头图字段</div>
+            <div>• 头图将作为媒体文件ID存储到Strapi</div>
+            <div>• 如果指定索引的图片不存在，将跳过头图处理</div>
+          </div>
         </div>
         
         <div style="margin-left: 20px; padding: 10px; background: #f0f9ff; border-left: 4px solid #0ea5e9; border-radius: 4px;">
