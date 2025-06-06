@@ -1,6 +1,6 @@
 # 🚀 Enhanced Article Extractor
 
-![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)
 ![Chrome Extension](https://img.shields.io/badge/Chrome%20Extension-Manifest%20V3-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
@@ -14,7 +14,16 @@
 - **图片优化**: 智能筛选相关图片，提升 30% 过滤精度
 - **性能卓越**: 16ms 智能过滤，内容可用性提升至 95%
 
-### 📊 增强元数据提取 (NEW!)
+### 🖼️ 头图自动上传功能 (v0.3.0 NEW!)
+智能头图处理，一键完成封面图配置：
+
+- **🎯 智能选择**: 根据索引自动选择文章中的图片作为头图
+- **📤 自动上传**: 头图直接上传到Strapi媒体库
+- **🔗 自动关联**: 媒体文件ID自动写入文章的头图字段
+- **🏷️ 智能命名**: 基于文章标题生成有意义的文件名
+- **⚡ 错误处理**: 优雅的错误处理，不影响主流程
+
+### 📊 增强元数据提取
 受 [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper) 启发的专业元数据提取：
 
 - **🔍 多源标题检测**: `og:title` → `twitter:title` → `<title>` → `<h1>`
@@ -133,7 +142,10 @@ npm run build
   publishTime: 'text',       // 发布时间
   sourceUrl: 'text',         // 原始链接
   
-  // 增强元数据 (NEW!)
+  // 🖼️ 头图字段 (v0.3.0 NEW!)
+  head_img: 'media',         // 头图/封面图 (单个媒体文件)
+  
+  // 增强元数据
   siteName: 'text',          // 网站名称
   language: 'text',          // 语言
   tags: 'json',             // 标签数组
@@ -168,9 +180,11 @@ npm run build
 | 文档 | 描述 |
 |------|------|
 | 📖 [快速开始指南](QUICK_START_GUIDE.md) | 详细安装和使用指南 |
+| 🖼️ [头图功能指南](HEAD_IMAGE_GUIDE.md) | 头图自动上传配置和使用 |
 | 🔗 [字段映射指南](FIELD_MAPPING_GUIDE.md) | Strapi 字段配置说明 |
 | 🚀 [功能增强摘要](ENHANCEMENT_SUMMARY.md) | 新功能详细介绍 |
 | 🔧 [规则引擎演示](RULES_ENGINE_DEMO.md) | DOM 清理规则说明 |
+| 📝 [更新记录](CHANGELOG.md) | 版本更新和功能变化记录 |
 
 ## 🏆 性能指标
 

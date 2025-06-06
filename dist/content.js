@@ -307,14 +307,20 @@ function extractWeChatArticle() {
   const images = [];
   if (contentEl) {
     const imgElements = contentEl.querySelectorAll('img[data-src], img[src]');
+    console.log(`🖼️ 从微信选择器方式找到 ${imgElements.length} 个图片元素`);
+    
     imgElements.forEach((img, index) => {
       const src = img.getAttribute('data-src') || img.src;
-      if (src && !src.startsWith('data:')) {
+      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+      if (isValidImageUrl(src)) {
+        console.log(`✅ 添加有效图片: ${src}`);
         images.push({
           src: src,
           alt: img.alt || '',
           index: index
         });
+      } else {
+        console.log(`❌ 跳过无效图片: ${src}`);
       }
     });
   }
@@ -349,17 +355,36 @@ function enhanceWithWeChatMetadata(defuddleResult) {
   tempDiv.innerHTML = defuddleResult.content;
   const imgElements = tempDiv.querySelectorAll('img');
   const images = [];
+  const seenUrls = new Set(); // 用于去重
+  
+  console.log(`🖼️ 从Defuddle清理的内容中找到 ${imgElements.length} 个图片元素`);
   
   imgElements.forEach((img, index) => {
     const src = img.getAttribute('data-src') || img.src;
-    if (src && !src.startsWith('data:')) {
+    console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+    
+    if (isValidImageUrl(src)) {
+      // 检查URL是否已经存在
+      if (seenUrls.has(src)) {
+        console.log(`🔄 跳过重复图片: ${src}`);
+        return;
+      }
+      
+      seenUrls.add(src);
+      console.log(`✅ 添加有效图片: ${src}`);
       images.push({
         src: src,
         alt: img.alt || '',
         index: index
       });
+    } else {
+      console.log(`❌ 跳过无效图片: ${src}`);
     }
   });
+  
+
+  
+  console.log(`📊 图片去重完成，最终收集到 ${images.length} 个唯一图片`);
 
   return {
     title: defuddleResult.title || '',
@@ -413,16 +438,34 @@ function extractGeneralContent() {
     tempDiv.innerHTML = result.content;
     const imgElements = tempDiv.querySelectorAll('img');
     const images = [];
+    const seenUrls = new Set(); // 用于去重
+    
+    console.log(`🖼️ 从Defuddle通用内容中找到 ${imgElements.length} 个图片元素`);
     
     imgElements.forEach((img, index) => {
-      if (img.src && !img.src.startsWith('data:')) {
+      const src = img.src;
+      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+      
+      if (isValidImageUrl(src)) {
+        // 检查URL是否已经存在
+        if (seenUrls.has(src)) {
+          console.log(`🔄 跳过重复图片: ${src}`);
+          return;
+        }
+        
+        seenUrls.add(src);
+        console.log(`✅ 添加有效图片: ${src}`);
         images.push({
-          src: img.src,
+          src: src,
           alt: img.alt || '',
           index: index
         });
+      } else {
+        console.log(`❌ 跳过无效图片: ${src}`);
       }
     });
+    
+    console.log(`📊 通用内容图片去重完成，最终收集到 ${images.length} 个唯一图片`);
     
     const finalResult = {
       title: result.title || document.title || '',
@@ -498,18 +541,37 @@ function extractBasicContent() {
   
   // Get images from the content area
   const images = [];
+  const seenUrls = new Set(); // 用于去重
+  
   if (contentEl) {
     const imgElements = contentEl.querySelectorAll('img');
+    console.log(`🖼️ 从基础内容提取中找到 ${imgElements.length} 个图片元素`);
+    
     imgElements.forEach((img, index) => {
-      if (img.src && !img.src.startsWith('data:')) {
+      const src = img.src;
+      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+      
+      if (isValidImageUrl(src)) {
+        // 检查URL是否已经存在
+        if (seenUrls.has(src)) {
+          console.log(`🔄 跳过重复图片: ${src}`);
+          return;
+        }
+        
+        seenUrls.add(src);
+        console.log(`✅ 添加有效图片: ${src}`);
         images.push({
-          src: img.src,
+          src: src,
           alt: img.alt || '',
           index: index
         });
+      } else {
+        console.log(`❌ 跳过无效图片: ${src}`);
       }
     });
   }
+  
+  console.log(`📊 基础内容图片去重完成，最终收集到 ${images.length} 个唯一图片`);
   
   // Get title
   const title = document.querySelector('h1')?.innerText?.trim() || 
@@ -798,19 +860,106 @@ async function extractArticleWithEnhancedMetadata() {
   }
 }
 
-async function downloadImage(imageUrl) {
+async function downloadImage(imageUrl, options = {}) {
   try {
-    const response = await fetch(imageUrl);
+    console.log(`🖼️ 开始下载图片: ${imageUrl.substring(0, 80)}...`);
+    
+    // 添加防盗链headers
+    const response = await fetch(imageUrl, {
+      headers: {
+        'Referer': window.location.href,
+        'User-Agent': navigator.userAgent
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const blob = await response.blob();
-    return new Promise((resolve) => {
+    console.log(`📦 图片下载成功: ${Math.round(blob.size / 1024)}KB`);
+    
+    // 验证是否为图片
+    if (!blob.type.startsWith('image/')) {
+      throw new Error(`文件类型错误: ${blob.type}, 期望图片类型`);
+    }
+    
+    // 如果启用压缩，处理图片
+    if (options.enableCompression) {
+      const compressedDataUrl = await compressImage(blob, options);
+      console.log(`🗜️ 图片压缩完成`);
+      return compressedDataUrl;
+    } else {
+      // 直接转换为data URL
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+    
+  } catch (error) {
+    console.error(`❌ 图片下载失败 (${imageUrl}):`, error);
+    return null;
+  }
+}
+
+// 智能图片压缩函数
+async function compressImage(blob, options = {}) {
+  const {
+    quality = 0.8,
+    maxWidth = 1200,
+    maxHeight = 800,
+    format = 'image/jpeg'
+  } = options;
+  
+  return new Promise((resolve) => {
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    img.onload = () => {
+      // 计算新尺寸
+      let { width, height } = img;
+      
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+        console.log(`📏 调整图片尺寸: ${img.width}x${img.height} → ${width}x${height}`);
+      }
+      
+      // 设置canvas尺寸
+      canvas.width = width;
+      canvas.height = height;
+      
+      // 绘制图片
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // 输出压缩后的图片
+      const compressedDataUrl = canvas.toDataURL(format, quality);
+      
+      // 计算压缩率
+      const originalSize = blob.size;
+      const compressedSize = Math.round(compressedDataUrl.length * 0.75); // base64大约比原始大33%
+      const compressionRatio = Math.round((1 - compressedSize / originalSize) * 100);
+      
+      console.log(`🎯 压缩统计: ${Math.round(originalSize/1024)}KB → ${Math.round(compressedSize/1024)}KB (压缩${compressionRatio}%)`);
+      
+      resolve(compressedDataUrl);
+    };
+    
+    img.onerror = () => {
+      console.warn('⚠️ 图片压缩失败，使用原图');
+      // 如果压缩失败，返回原图
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);
       reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error('Error downloading image:', error);
-    return null;
-  }
+    };
+    
+    // 创建图片对象URL
+    img.src = URL.createObjectURL(blob);
+  });
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -839,8 +988,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     
     return true; // Keep message channel open for async response
   } else if (msg.type === 'downloadImage') {
-    downloadImage(msg.url).then(dataUrl => {
-      sendResponse({ success: true, dataUrl });
+    const options = {
+      enableCompression: msg.enableCompression || false,
+      quality: msg.quality || 0.8,
+      maxWidth: msg.maxWidth || 1200,
+      maxHeight: msg.maxHeight || 800
+    };
+    
+    downloadImage(msg.url, options).then(dataUrl => {
+      if (dataUrl) {
+        sendResponse({ success: true, dataUrl });
+      } else {
+        sendResponse({ success: false, error: '图片下载失败' });
+      }
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
     });
@@ -849,6 +1009,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Add debug information to console
+// 辅助函数：验证图片URL是否有效
+function isValidImageUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  
+  // 过滤掉无效的URL类型
+  const invalidPrefixes = [
+    'data:',                    // base64图片
+    'chrome-extension://',      // 浏览器扩展链接
+    'moz-extension://',         // Firefox扩展链接
+    'chrome://',               // Chrome内部页面
+    'about:',                  // 浏览器内部页面
+    'javascript:',             // JavaScript代码
+    'blob:',                   // Blob URL（通常是临时的）
+    'extension://'             // 通用扩展前缀
+  ];
+  
+  // 检查是否是无效前缀
+  for (const prefix of invalidPrefixes) {
+    if (url.startsWith(prefix)) {
+      console.log(`🚫 过滤无效图片链接: ${url.substring(0, 50)}... (${prefix})`);
+      return false;
+    }
+  }
+  
+  // 检查是否是有效的HTTP(S) URL
+  try {
+    const urlObj = new URL(url);
+    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      console.log(`🚫 过滤非HTTP图片链接: ${url.substring(0, 50)}... (${urlObj.protocol})`);
+      return false;
+    }
+  } catch (error) {
+    console.log(`🚫 过滤无效URL格式: ${url.substring(0, 50)}...`);
+    return false;
+  }
+  
+  return true;
+}
+
 console.log('Enhanced Smart Article Extractor content script loaded with Defuddle support');
 console.log('Current domain:', window.location.hostname);
 console.log('Defuddle available at load:', typeof (defuddle__WEBPACK_IMPORTED_MODULE_0___default())); 

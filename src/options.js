@@ -73,8 +73,42 @@ function getFieldMapping() {
       language: document.getElementById('languageField').value.trim(),
       tags: document.getElementById('tagsField').value.trim(),
       readingTime: document.getElementById('readingTimeField').value.trim(),
-      created: document.getElementById('createdField').value.trim()
+      created: document.getElementById('createdField').value.trim(),
+      // 🔥 新增：头图字段
+      headImg: document.getElementById('headImgField').value.trim()
     }
+  };
+}
+
+function getFieldPresets() {
+  const useFieldPresets = document.getElementById('useFieldPresets').checked;
+  
+  if (!useFieldPresets) {
+    return {
+      enabled: false,
+      presets: {}
+    };
+  }
+  
+  const presets = {};
+  const presetRows = document.querySelectorAll('.preset-field-row');
+  
+  presetRows.forEach(row => {
+    const fieldName = row.querySelector('.field-name').value.trim();
+    const fieldValue = row.querySelector('.field-value').value.trim();
+    const fieldType = row.querySelector('.field-type').value;
+    
+    if (fieldName && fieldValue) {
+      presets[fieldName] = {
+        value: fieldValue,
+        type: fieldType
+      };
+    }
+  });
+  
+  return {
+    enabled: true,
+    presets: presets
   };
 }
 
@@ -87,7 +121,17 @@ function getAdvancedSettings() {
     sanitizeContent: document.getElementById('sanitizeContent').checked,
     includeBlocksField: document.getElementById('includeBlocksField').checked,
     putContentInBlocks: document.getElementById('putContentInBlocks').checked,
-    blocksComponentName: document.getElementById('blocksComponentName').value.trim() || 'blocks.rich-text'
+    blocksComponentName: document.getElementById('blocksComponentName').value.trim() || 'blocks.rich-text',
+    // 新增图片处理设置
+    enableImageCompression: document.getElementById('enableImageCompression').checked,
+    imageQuality: parseFloat(document.getElementById('imageQuality').value) || 0.8,
+    maxImageWidth: parseInt(document.getElementById('maxImageWidth').value) || 1200,
+    maxImageHeight: parseInt(document.getElementById('maxImageHeight').value) || 800,
+    smartImageReplace: document.getElementById('smartImageReplace').checked,
+    retryFailedImages: document.getElementById('retryFailedImages').checked,
+    // 🔥 新增：头图设置
+    uploadHeadImg: document.getElementById('uploadHeadImg').checked,
+    headImgIndex: parseInt(document.getElementById('headImgIndex').value) || 0
   };
 }
 
@@ -141,8 +185,14 @@ function load() {
         language: '',
         tags: '',
         readingTime: '',
-        created: ''
+        created: '',
+        // 🔥 新增：头图字段
+        headImg: ''
       }
+    },
+    fieldPresets: {
+      enabled: false,
+      presets: {}
     },
     advancedSettings: {
       maxContentLength: 50000,
@@ -152,7 +202,17 @@ function load() {
       sanitizeContent: true,
       includeBlocksField: true,
       putContentInBlocks: false,
-      blocksComponentName: 'blocks.rich-text'
+      blocksComponentName: 'blocks.rich-text',
+      // 图片处理默认设置
+      enableImageCompression: true,
+      imageQuality: 0.8,
+      maxImageWidth: 1200,
+      maxImageHeight: 800,
+      smartImageReplace: true,
+      retryFailedImages: true,
+      // 🔥 新增：头图相关设置
+      uploadHeadImg: false,
+      headImgIndex: 0
     }
   };
   
@@ -185,6 +245,8 @@ function load() {
     document.getElementById('tagsField').value = fieldMapping.fields.tags || '';
     document.getElementById('readingTimeField').value = fieldMapping.fields.readingTime || '';
     document.getElementById('createdField').value = fieldMapping.fields.created || '';
+    // 🔥 新增：头图字段
+    document.getElementById('headImgField').value = fieldMapping.fields.headImg || '';
     
     // 高级设置
     const advancedSettings = data.advancedSettings || defaultSettings.advancedSettings;
@@ -197,11 +259,37 @@ function load() {
     document.getElementById('putContentInBlocks').checked = advancedSettings.putContentInBlocks;
     document.getElementById('blocksComponentName').value = advancedSettings.blocksComponentName;
     
+    // 图片处理设置
+    document.getElementById('enableImageCompression').checked = advancedSettings.enableImageCompression !== false;
+    document.getElementById('imageQuality').value = advancedSettings.imageQuality || 0.8;
+    document.getElementById('maxImageWidth').value = advancedSettings.maxImageWidth || 1200;
+    document.getElementById('maxImageHeight').value = advancedSettings.maxImageHeight || 800;
+    document.getElementById('smartImageReplace').checked = advancedSettings.smartImageReplace !== false;
+    document.getElementById('retryFailedImages').checked = advancedSettings.retryFailedImages !== false;
+    
+    // 🔥 新增：头图设置
+    document.getElementById('uploadHeadImg').checked = advancedSettings.uploadHeadImg || false;
+    document.getElementById('headImgIndex').value = advancedSettings.headImgIndex || 0;
+    
+    // 初始化头图配置显示状态
+    toggleHeadImgConfig();
+    
     // 规则引擎设置
     document.getElementById('enableCleanupRules').checked = data.enableCleanupRules !== false; // 默认启用
     if (data.customCleanupRules && Array.isArray(data.customCleanupRules)) {
       document.getElementById('customCleanupRules').value = JSON.stringify(data.customCleanupRules, null, 2);
     }
+    
+    // 预设值配置
+    const fieldPresets = data.fieldPresets || { enabled: false, presets: {} };
+    document.getElementById('useFieldPresets').checked = fieldPresets.enabled;
+    
+    if (fieldPresets.enabled) {
+      document.getElementById('fieldPresetsConfig').style.display = 'block';
+    }
+    
+    // 加载预设字段
+    loadPresetFields(fieldPresets.presets);
     
     // 初始化显示状态
     toggleBlocksConfig();
@@ -223,6 +311,7 @@ function save() {
     token: document.getElementById('token').value.trim(),
     collection: document.getElementById('collection').value.trim(),
     fieldMapping: getFieldMapping(),
+    fieldPresets: getFieldPresets(),
     advancedSettings: getAdvancedSettings(),
     enableCleanupRules: cleanupRulesSettings.enableCleanupRules,
     customCleanupRules: cleanupRulesSettings.customCleanupRules
@@ -296,6 +385,67 @@ function toggleBlocksConfig() {
   }
 }
 
+// 切换预设值配置显示
+function toggleFieldPresets() {
+  const useFieldPresets = document.getElementById('useFieldPresets').checked;
+  const configSection = document.getElementById('fieldPresetsConfig');
+  
+  if (useFieldPresets) {
+    configSection.style.display = 'block';
+  } else {
+    configSection.style.display = 'none';
+  }
+}
+
+// 加载预设字段
+function loadPresetFields(presets) {
+  const container = document.getElementById('presetFieldsList');
+  container.innerHTML = '';
+  
+  // 如果没有预设字段，添加一个空的示例行
+  if (Object.keys(presets).length === 0) {
+    addPresetFieldRow('', '', 'text');
+  } else {
+    // 加载已有的预设字段
+    Object.entries(presets).forEach(([fieldName, config]) => {
+      addPresetFieldRow(fieldName, config.value, config.type || 'text');
+    });
+  }
+}
+
+// 添加预设字段行
+function addPresetFieldRow(fieldName = '', value = '', type = 'text') {
+  const container = document.getElementById('presetFieldsList');
+  const row = document.createElement('div');
+  row.className = 'preset-field-row';
+  
+  row.innerHTML = `
+    <input type="text" class="field-name" placeholder="Field name (e.g., news_source)" value="${fieldName}">
+    <select class="field-type">
+      <option value="text" ${type === 'text' ? 'selected' : ''}>Text</option>
+      <option value="number" ${type === 'number' ? 'selected' : ''}>Number</option>
+      <option value="boolean" ${type === 'boolean' ? 'selected' : ''}>Boolean</option>
+      <option value="json" ${type === 'json' ? 'selected' : ''}>JSON</option>
+    </select>
+    <input type="text" class="field-value" placeholder="Default value (e.g., reprint)" value="${value}">
+    <button type="button" class="remove-btn">Remove</button>
+  `;
+  
+  container.appendChild(row);
+}
+
+// 移除预设字段行
+function removePresetFieldRow(button) {
+  const row = button.closest('.preset-field-row');
+  row.remove();
+  
+  // 如果没有行了，添加一个空行
+  const container = document.getElementById('presetFieldsList');
+  if (container.children.length === 0) {
+    addPresetFieldRow();
+  }
+}
+
 // 实时验证
 document.getElementById('strapiUrl').addEventListener('blur', function() {
   const url = this.value.trim();
@@ -313,6 +463,9 @@ document.getElementById('collection').addEventListener('blur', function() {
 
 // 字段映射切换事件
 document.getElementById('useFieldMapping').addEventListener('change', toggleFieldMapping);
+
+// 预设值切换事件
+document.getElementById('useFieldPresets').addEventListener('change', toggleFieldPresets);
 
 // blocks配置切换事件
 document.getElementById('putContentInBlocks').addEventListener('change', toggleBlocksConfig);
@@ -595,4 +748,35 @@ document.getElementById('restoreFile').addEventListener('change', handleFileRest
 document.getElementById('reset').addEventListener('click', resetSettings);
 
 // 页面加载事件
-document.addEventListener('DOMContentLoaded', load);
+document.addEventListener('DOMContentLoaded', function() {
+  load();
+  
+  // 添加预设字段按钮事件（需要在DOM加载后绑定）
+  document.getElementById('addPresetField').addEventListener('click', function() {
+    addPresetFieldRow();
+  });
+  
+  // 使用事件委托处理删除按钮点击（因为按钮是动态生成的）
+  document.getElementById('presetFieldsList').addEventListener('click', function(event) {
+    if (event.target && event.target.classList.contains('remove-btn')) {
+      removePresetFieldRow(event.target);
+    }
+  });
+  
+  // 🔥 新增：头图配置切换事件监听器
+  document.getElementById('uploadHeadImg').addEventListener('change', toggleHeadImgConfig);
+});
+
+// 🔥 新增：切换头图配置显示
+function toggleHeadImgConfig() {
+  const uploadHeadImg = document.getElementById('uploadHeadImg').checked;
+  const configSection = document.getElementById('headImgConfig');
+  
+  if (configSection) {
+    if (uploadHeadImg) {
+      configSection.style.display = 'block';
+    } else {
+      configSection.style.display = 'none';
+    }
+  }
+}
