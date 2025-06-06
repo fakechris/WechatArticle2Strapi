@@ -37,7 +37,7 @@ function displayArticlePreview(article) {
     ${article.parseTime ? `<p><strong>Parse Time:</strong> ${article.parseTime}ms</p>` : ''}
     <details style="margin-top: 10px;">
       <summary style="cursor: pointer; font-weight: bold;">Debug Info</summary>
-      <pre style="font-size: 10px; background: #f5f5f5; padding: 5px; border-radius: 3px; margin-top: 5px; white-space: pre-wrap;">${JSON.stringify(article, null, 2)}</pre>
+      <pre style="font-size: 10px; background: #f5f5f5; padding: 5px; border-radius: 3px; margin-top: 5px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${JSON.stringify({...article, content: article.content ? article.content.substring(0, 500) + '...[truncated]' : ''}, null, 2)}</pre>
     </details>
   `;
   document.getElementById('preview-section').style.display = 'block';
@@ -132,22 +132,37 @@ document.getElementById('extract').addEventListener('click', () => {
       
       updateStatus('Sending to Strapi...');
       
+      console.log('=== Sending to Background Script ===');
+      console.log('Article to send:', {
+        title: article.title,
+        method: article.extractionMethod,
+        contentLength: article.content?.length
+      });
+      
       chrome.runtime.sendMessage({ type: 'sendToStrapi', article }, response => {
         setLoading(false);
         
+        console.log('=== Background Script Response ===');
+        console.log('Response received:', response);
+        console.log('Chrome runtime error:', chrome.runtime.lastError);
+        
         if (chrome.runtime.lastError) {
+          console.error('Communication error details:', chrome.runtime.lastError);
           updateStatus('Communication error: ' + chrome.runtime.lastError.message, true);
           return;
         }
         
         if (response && response.success) {
+          console.log('Upload successful, response data:', response.data);
           updateStatus('Successfully uploaded to Strapi!');
           // 显示成功详情
-          if (response.data && response.data.data) {
-            const createdId = response.data.data.id;
+          if (response.data && response.data.id) {
+            const createdId = response.data.id;
+            console.log('Article ID from response:', createdId);
             updateStatus(`Successfully uploaded! Article ID: ${createdId}`);
           }
         } else {
+          console.error('Upload failed, response:', response);
           const errorMsg = response && response.error ? response.error : 'Unknown error occurred';
           updateStatus('Upload failed: ' + errorMsg, true);
         }

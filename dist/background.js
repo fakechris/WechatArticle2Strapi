@@ -59,12 +59,21 @@ function sanitizeContent(content, maxLength = 50000) {
 
 // 生成URL友好的slug
 function generateSlug(title) {
-  return title
+  const baseSlug = title
     .toLowerCase()
     .trim()
     .replace(/[\s\W-]+/g, '-') // 替换空格和特殊字符为-
     .replace(/^-+|-+$/g, '') // 移除开头和结尾的-
     .substring(0, 50); // 限制长度
+  
+  // 添加时间戳确保唯一性
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 6); // 4位随机字符
+  
+  // 组合基础slug + 时间戳后4位 + 随机字符，确保唯一性且保持可读性
+  const uniqueSlug = `${baseSlug}-${timestamp.toString().slice(-4)}-${randomSuffix}`;
+  
+  return uniqueSlug.substring(0, 60); // 稍微增加总长度限制以容纳唯一标识符
 }
 
 // 验证和格式化文章数据
@@ -151,8 +160,8 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
     data[fieldMap.sourceUrl] = article.url;
   }
   
-  // 图片字段 - 只有在映射了有效字段名时才添加，但不能映射到blocks
-  if (article.processedImages && article.processedImages.length > 0 && fieldMap.images && fieldMap.images.trim() && fieldMap.images !== 'blocks') {
+  // 图片字段 - 只有在映射了有效字段名时才添加
+  if (article.processedImages && article.processedImages.length > 0 && fieldMap.images && fieldMap.images.trim()) {
     data[fieldMap.images] = article.processedImages;
   }
   
@@ -161,59 +170,11 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
     data[fieldMap.slug] = generateSlug(article.title);
   }
   
-  // 检查是否有字段被映射到了blocks
-  const fieldsMappedToBlocks = Object.entries(fieldMap).filter(([key, value]) => value === 'blocks');
-  if (fieldsMappedToBlocks.length > 0) {
-    console.warn('Warning: Some fields are mapped to "blocks":', fieldsMappedToBlocks);
-    console.warn('This may cause conflicts with Dynamic Zone handling');
-  }
-  
-  // Strapi Dynamic Zone (blocks) 特殊处理
-  if (advancedSettings.includeBlocksField) {
-    // 确保blocks字段总是数组，即使有其他映射
-    data.blocks = [];
-    
-    console.log('Initialized blocks array');
-    
-    // 如果启用了将内容放入blocks
-    if (advancedSettings.putContentInBlocks && article.content) {
-      const maxContentLength = advancedSettings.maxContentLength || 50000;
-      const contentToUse = advancedSettings.sanitizeContent 
-        ? sanitizeContent(article.content, maxContentLength)
-        : article.content.substring(0, maxContentLength);
-      
-      // 创建富文本块
-      const richTextBlock = {
-        __component: advancedSettings.blocksComponentName || 'blocks.rich-text',
-        content: contentToUse
-      };
-      
-      data.blocks.push(richTextBlock);
-      
-      console.log('Added content to blocks:', {
-        componentName: richTextBlock.__component,
-        contentLength: contentToUse.length,
-        blocksArrayLength: data.blocks.length,
-        blocksType: typeof data.blocks
-      });
-    }
-    
-    console.log('Final blocks setup:', {
-      blocksType: typeof data.blocks,
-      blocksLength: Array.isArray(data.blocks) ? data.blocks.length : 'not array',
-      blocksContent: data.blocks
-    });
-  }
-  
-  // 不再自动添加元数据字段，只发送明确映射的字段
-  
   // 调试信息：记录将要发送的字段
   console.log('Final data to send to Strapi:', {
     fields: Object.keys(data),
     fieldMappingEnabled: fieldMapping.enabled,
     fieldMap: fieldMap,
-    blocksType: typeof data.blocks,
-    blocksContent: data.blocks,
     dataContent: data
   });
   
@@ -317,6 +278,36 @@ async function sendToStrapi(article) {
     
     const endpoint = `${config.strapiUrl}/api/${config.collection}`;
     
+    // 先测试API是否可访问
+    console.log('Testing API accessibility...');
+    try {
+      const testResponse = await fetch(`${config.strapiUrl}/api/${config.collection}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${config.token}`
+        }
+      });
+      console.log('API Test Status:', testResponse.status);
+      if (testResponse.status === 404) {
+        // 尝试不带 /api 前缀的路径
+        const altEndpoint = `${config.strapiUrl}/${config.collection}`;
+        console.log('Trying alternative endpoint:', altEndpoint);
+        const altTestResponse = await fetch(altEndpoint, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${config.token}`
+          }
+        });
+        console.log('Alternative API Test Status:', altTestResponse.status);
+        if (altTestResponse.ok) {
+          endpoint = altEndpoint;
+          console.log('Using alternative endpoint:', endpoint);
+        }
+      }
+    } catch (testError) {
+      console.warn('API test failed:', testError);
+    }
+    
     console.log('Sending article data to Strapi:', {
       endpoint,
       dataKeys: Object.keys(articleData),
@@ -327,9 +318,7 @@ async function sendToStrapi(article) {
     // 发送前最后检查
     console.log('About to send request with data:', {
       dataKeys: Object.keys(articleData),
-      blocksType: typeof articleData.blocks,
-      blocksIsArray: Array.isArray(articleData.blocks),
-      blocksContent: articleData.blocks
+      dataContent: articleData
     });
     
     const requestBody = { data: articleData };
@@ -337,6 +326,14 @@ async function sendToStrapi(article) {
     
     console.log('Request body string length:', requestBodyString.length);
     console.log('Request body preview:', requestBodyString.substring(0, 500) + '...');
+    
+    console.log('=== Sending Request ===');
+    console.log('Endpoint:', endpoint);
+    console.log('Method: POST');
+    console.log('Headers:', {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.token.substring(0, 10)}...`
+    });
     
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -347,6 +344,11 @@ async function sendToStrapi(article) {
       body: requestBodyString
     });
     
+    console.log('=== Response Details ===');
+    console.log('Status:', response.status);
+    console.log('Status Text:', response.statusText);
+    console.log('Headers:', Object.fromEntries(response.headers.entries()));
+    
     if (!response.ok) {
       // 先读取响应文本，避免多次读取body stream
       const responseText = await response.text();
@@ -355,6 +357,69 @@ async function sendToStrapi(article) {
       try {
         // 尝试解析为JSON
         const errorData = JSON.parse(responseText);
+        
+        // 检查是否是slug重复错误
+        if (errorData.error && 
+            errorData.error.name === 'ValidationError' && 
+            errorData.error.message && 
+            errorData.error.message.includes('unique') &&
+            errorData.error.details && 
+            errorData.error.details.errors) {
+          
+          // 查找slug字段的错误
+          const slugError = errorData.error.details.errors.find(err => 
+            err.path && err.path.includes('slug') && err.message.includes('unique')
+          );
+          
+          if (slugError) {
+            console.log('Slug uniqueness conflict detected, retrying with new slug...');
+            
+            // 使用已存在的fieldMapping和advancedSettings变量
+            const fieldMap = fieldMapping.enabled ? fieldMapping.fields : {
+              title: 'title', content: 'content', slug: 'slug'
+            };
+            
+            if (fieldMap.slug && advancedSettings.generateSlug) {
+              // 生成新的更唯一的slug
+              const timestamp = Date.now();
+              const randomSuffix = Math.random().toString(36).substring(2, 8);
+              const newSlug = generateSlug(processedArticle.title) + `-${timestamp}-${randomSuffix}`;
+              
+              // 更新数据中的slug
+              const updatedData = { ...articleData };
+              updatedData[fieldMap.slug] = newSlug.substring(0, 60);
+              
+              console.log(`Retrying with new slug: ${updatedData[fieldMap.slug]}`);
+              console.log('Updated data keys:', Object.keys(updatedData));
+              
+              // 重新发送请求
+              const retryRequestBody = { data: updatedData };
+              const retryResponse = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${config.token}`
+                },
+                body: JSON.stringify(retryRequestBody)
+              });
+              
+              if (retryResponse.ok) {
+                const result = await retryResponse.json();
+                console.log('=== Retry Successful ===');
+                console.log('Retry response:', result);
+                console.log('Retry Article ID:', result.data?.id);
+                return result;
+              } else {
+                // 如果重试还是失败，继续原来的错误处理逻辑
+                const retryErrorText = await retryResponse.text();
+                console.error('=== Retry Failed ===');
+                console.error('Retry error status:', retryResponse.status);
+                console.error('Retry error text:', retryErrorText);
+                throw new Error(`Retry failed (${retryResponse.status}): ${retryErrorText.substring(0, 200)}`);
+              }
+            }
+          }
+        }
         
         // 提供更友好的错误信息
         if (errorData.error && errorData.error.name === 'ValidationError') {
@@ -388,7 +453,12 @@ async function sendToStrapi(article) {
       throw new Error(`Strapi API error (${response.status}): ${errorMessage}`);
     }
     
-    return response.json();
+    const result = await response.json();
+    console.log('=== Strapi API Response ===');
+    console.log('Full response:', result);
+    console.log('Response data:', result.data);
+    console.log('Response ID:', result.data?.id);
+    return result;
   } catch (error) {
     console.error('Error sending to Strapi:', error);
     throw error;
