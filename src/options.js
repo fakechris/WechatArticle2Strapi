@@ -67,7 +67,13 @@ function getFieldMapping() {
       digest: document.getElementById('digestField').value.trim(),
       sourceUrl: document.getElementById('sourceUrlField').value.trim(),
       images: document.getElementById('imagesField').value.trim(),
-      slug: document.getElementById('slugField').value.trim() || 'slug'
+      slug: document.getElementById('slugField').value.trim() || 'slug',
+      // Enhanced metadata fields
+      siteName: document.getElementById('siteNameField').value.trim(),
+      language: document.getElementById('languageField').value.trim(),
+      tags: document.getElementById('tagsField').value.trim(),
+      readingTime: document.getElementById('readingTimeField').value.trim(),
+      created: document.getElementById('createdField').value.trim()
     }
   };
 }
@@ -129,7 +135,13 @@ function load() {
         digest: '',
         sourceUrl: '',
         images: '',
-        slug: 'slug'
+        slug: 'slug',
+        // Enhanced metadata fields
+        siteName: '',
+        language: '',
+        tags: '',
+        readingTime: '',
+        created: ''
       }
     },
     advancedSettings: {
@@ -166,6 +178,13 @@ function load() {
     document.getElementById('sourceUrlField').value = fieldMapping.fields.sourceUrl || '';
     document.getElementById('imagesField').value = fieldMapping.fields.images || '';
     document.getElementById('slugField').value = fieldMapping.fields.slug || 'slug';
+    
+    // Enhanced metadata fields
+    document.getElementById('siteNameField').value = fieldMapping.fields.siteName || '';
+    document.getElementById('languageField').value = fieldMapping.fields.language || '';
+    document.getElementById('tagsField').value = fieldMapping.fields.tags || '';
+    document.getElementById('readingTimeField').value = fieldMapping.fields.readingTime || '';
+    document.getElementById('createdField').value = fieldMapping.fields.created || '';
     
     // 高级设置
     const advancedSettings = data.advancedSettings || defaultSettings.advancedSettings;

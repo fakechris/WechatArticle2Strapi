@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Smart Article Extractor",
-  "description": "Enhanced content extraction with Defuddle - Extract articles from any website to Strapi CMS",
-  "version": "0.1.0",
+  "name": "Enhanced Article Extractor",
+  "description": "Advanced metadata extraction inspired by Obsidian Clipper - Extract articles with rich metadata to Strapi CMS",
+  "version": "0.2.0",
   "permissions": [
     "storage",
     "activeTab",

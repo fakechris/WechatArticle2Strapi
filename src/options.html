@@ -1,6 +1,7 @@
 <!doctype html>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>Settings - Smart Article Extractor</title>
   <style>
     body {
@@ -235,6 +236,41 @@
           <div class="form-row">
             <label>Slug → <span class="field-type-badge">UID</span></label>
             <input type="text" id="slugField" placeholder="slug" />
+          </div>
+          
+          <div style="margin-top: 15px; padding: 10px; background: #e7f3ff; border-left: 4px solid #0066cc; border-radius: 4px;">
+            <h4 style="margin: 0 0 10px 0; color: #0066cc;">📊 Enhanced Metadata Fields (New!)</h4>
+            <div class="help-text" style="margin-bottom: 10px;">Additional metadata extracted from web pages, inspired by Obsidian Clipper</div>
+            
+            <div class="form-row">
+              <label>Site Name → <span class="field-type-badge">Text</span></label>
+              <input type="text" id="siteNameField" placeholder="siteName" />
+              <div class="help-text" style="font-size: 11px;">Website name (e.g., "微信公众号", "知乎专栏")</div>
+            </div>
+            
+            <div class="form-row">
+              <label>Language → <span class="field-type-badge">Text</span></label>
+              <input type="text" id="languageField" placeholder="language" />
+              <div class="help-text" style="font-size: 11px;">Content language (e.g., "zh-CN", "en")</div>
+            </div>
+            
+            <div class="form-row">
+              <label>Tags/Keywords → <span class="field-type-badge">JSON/Text</span></label>
+              <input type="text" id="tagsField" placeholder="tags" />
+              <div class="help-text" style="font-size: 11px;">Extracted tags and keywords as JSON array</div>
+            </div>
+            
+            <div class="form-row">
+              <label>Reading Time → <span class="field-type-badge">Number</span></label>
+              <input type="text" id="readingTimeField" placeholder="readingTime" />
+              <div class="help-text" style="font-size: 11px;">Estimated reading time in minutes</div>
+            </div>
+            
+            <div class="form-row">
+              <label>Created At → <span class="field-type-badge">DateTime</span></label>
+              <input type="text" id="createdField" placeholder="extractedAt" />
+              <div class="help-text" style="font-size: 11px;">Timestamp when content was extracted</div>
+            </div>
           </div>
         </div>
       </div>

@@ -471,6 +471,261 @@ function extractBasicContent() {
   return basicResult;
 }
 
+// Enhanced metadata extraction inspired by Obsidian Clipper
+function extractEnhancedMetadata(document) {
+  console.log('🔍 Extracting enhanced metadata...');
+  
+  const metadata = {
+    title: '',
+    source: window.location.href,
+    author: '',
+    published: '',
+    created: new Date().toISOString(),
+    description: '',
+    siteName: '',
+    canonical: '',
+    language: '',
+    tags: [],
+    readingTime: 0
+  };
+
+  // Title extraction (multiple sources)
+  metadata.title = 
+    document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+    document.querySelector('meta[name="twitter:title"]')?.getAttribute('content') ||
+    document.querySelector('title')?.textContent ||
+    document.querySelector('h1')?.textContent ||
+    '';
+
+  // Author extraction (comprehensive approach like Obsidian Clipper)
+  const authorSelectors = [
+    'meta[name="author"]',
+    'meta[property="article:author"]', 
+    'meta[property="og:article:author"]',
+    'meta[name="twitter:creator"]',
+    '[rel="author"]',
+    '.byline',
+    '.author',
+    '.writer',
+    '.post-author',
+    '.article-author',
+    '[class*="author"]',
+    '[data-author]'
+  ];
+  
+  for (const selector of authorSelectors) {
+    const element = document.querySelector(selector);
+    if (element) {
+      if (element.tagName === 'META') {
+        metadata.author = element.getAttribute('content');
+      } else {
+        metadata.author = element.textContent?.trim();
+      }
+      if (metadata.author) break;
+    }
+  }
+
+  // WeChat specific author extraction
+  if (window.location.hostname === 'mp.weixin.qq.com') {
+    const wechatAuthor = document.querySelector('#js_name, .rich_media_meta_text, .account_nickname_inner');
+    if (wechatAuthor) {
+      metadata.author = wechatAuthor.textContent?.trim() || metadata.author;
+    }
+  }
+
+  // Published date extraction (like Obsidian Clipper)
+  const publishedSources = [
+    'meta[property="article:published_time"]',
+    'meta[property="og:article:published_time"]',
+    'meta[name="publish_date"]',
+    'meta[name="date"]',
+    'meta[name="DC.date"]',
+    'time[datetime]',
+    'time[pubdate]',
+    '[datetime]'
+  ];
+
+  for (const selector of publishedSources) {
+    const element = document.querySelector(selector);
+    if (element) {
+      let dateValue = element.getAttribute('content') || 
+                      element.getAttribute('datetime') || 
+                      element.textContent;
+      
+      if (dateValue) {
+        // Try to parse and format the date
+        try {
+          const date = new Date(dateValue);
+          if (!isNaN(date.getTime())) {
+            metadata.published = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+            break;
+          }
+        } catch (e) {
+          console.warn('Failed to parse date:', dateValue);
+        }
+      }
+    }
+  }
+
+  // WeChat specific publish date
+  if (window.location.hostname === 'mp.weixin.qq.com') {
+    const wechatTime = document.querySelector('#publish_time, .rich_media_meta_text');
+    if (wechatTime && !metadata.published) {
+      const timeText = wechatTime.textContent?.trim();
+      if (timeText) {
+        try {
+          const date = new Date(timeText);
+          if (!isNaN(date.getTime())) {
+            metadata.published = date.toISOString().split('T')[0];
+          }
+        } catch (e) {
+          metadata.published = timeText; // Keep as text if parsing fails
+        }
+      }
+    }
+  }
+
+  // Description extraction
+  metadata.description = 
+    document.querySelector('meta[name="description"]')?.getAttribute('content') ||
+    document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+    document.querySelector('meta[name="twitter:description"]')?.getAttribute('content') ||
+    '';
+
+  // WeChat specific description
+  if (window.location.hostname === 'mp.weixin.qq.com') {
+    const wechatDesc = document.querySelector('.rich_media_meta_text');
+    if (wechatDesc && !metadata.description) {
+      metadata.description = wechatDesc.textContent?.trim() || '';
+    }
+  }
+
+  // Site name
+  metadata.siteName = 
+    document.querySelector('meta[property="og:site_name"]')?.getAttribute('content') ||
+    document.querySelector('meta[name="application-name"]')?.getAttribute('content') ||
+    window.location.hostname;
+
+  // Canonical URL
+  metadata.canonical = 
+    document.querySelector('link[rel="canonical"]')?.getAttribute('href') ||
+    document.querySelector('meta[property="og:url"]')?.getAttribute('content') ||
+    window.location.href;
+
+  // Language
+  metadata.language = 
+    document.documentElement.lang ||
+    document.querySelector('meta[http-equiv="content-language"]')?.getAttribute('content') ||
+    'en';
+
+  // Keywords/Tags extraction
+  const keywordsEl = document.querySelector('meta[name="keywords"]');
+  if (keywordsEl) {
+    const keywords = keywordsEl.getAttribute('content');
+    if (keywords) {
+      metadata.tags = keywords.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+    }
+  }
+
+  // Article tags (additional sources)
+  const tagSelectors = [
+    '.tags a',
+    '.tag',
+    '.post-tags a', 
+    '.article-tags a',
+    '[rel="tag"]',
+    '.hashtag'
+  ];
+  
+  for (const selector of tagSelectors) {
+    const tagElements = document.querySelectorAll(selector);
+    if (tagElements.length > 0) {
+      const additionalTags = Array.from(tagElements)
+        .map(el => el.textContent?.trim())
+        .filter(tag => tag && tag.length > 0);
+      metadata.tags = [...new Set([...metadata.tags, ...additionalTags])];
+      break;
+    }
+  }
+
+  // Estimate reading time
+  const contentText = document.body.textContent || '';
+  const wordsPerMinute = 200; // Average reading speed
+  const wordCount = contentText.trim().split(/\s+/).length;
+  metadata.readingTime = Math.ceil(wordCount / wordsPerMinute);
+
+  // Clean and validate metadata
+  Object.keys(metadata).forEach(key => {
+    if (typeof metadata[key] === 'string') {
+      metadata[key] = metadata[key].trim();
+    }
+  });
+
+  console.log('✅ Enhanced metadata extracted:', {
+    title: metadata.title.substring(0, 50) + '...',
+    author: metadata.author,
+    published: metadata.published,
+    description: metadata.description.substring(0, 100) + '...',
+    siteName: metadata.siteName,
+    tagsCount: metadata.tags.length,
+    readingTime: metadata.readingTime
+  });
+
+  return metadata;
+}
+
+// Enhanced content extraction with metadata
+async function extractArticleWithEnhancedMetadata() {
+  try {
+    console.log('🚀 Starting enhanced extraction with metadata...');
+    
+    // First extract metadata
+    const metadata = extractEnhancedMetadata(document);
+    
+    // Then extract content using existing logic
+    const article = await extractArticle();
+    
+    // Merge metadata with article content
+    const enhancedArticle = {
+      ...article,
+      ...metadata,
+      // Preserve original fields but enhance with metadata
+      title: metadata.title || article.title,
+      author: metadata.author || article.author,
+      publishTime: metadata.published || article.publishTime,
+      digest: metadata.description || article.digest,
+      url: metadata.canonical || article.url,
+      
+      // Additional metadata fields
+      siteName: metadata.siteName,
+      language: metadata.language,
+      tags: metadata.tags,
+      readingTime: metadata.readingTime,
+      created: metadata.created,
+      
+      // Enhanced extraction indicator
+      extractionMethod: article.extractionMethod + '-enhanced-metadata'
+    };
+
+    console.log('🎯 Enhanced article with metadata:', {
+      title: enhancedArticle.title.substring(0, 50) + '...',
+      author: enhancedArticle.author,
+      published: enhancedArticle.publishTime,
+      siteName: enhancedArticle.siteName,
+      tagsCount: enhancedArticle.tags.length,
+      contentLength: enhancedArticle.content.length,
+      method: enhancedArticle.extractionMethod
+    });
+
+    return enhancedArticle;
+    
+  } catch (error) {
+    console.error('❌ Enhanced extraction failed:', error);
+    // Fallback to regular extraction
+    return await extractArticle();
+  }
+}
+
 async function downloadImage(imageUrl) {
   try {
     const response = await fetch(imageUrl);
@@ -488,20 +743,25 @@ async function downloadImage(imageUrl) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'extract') {
-    console.log('Received extract request');
+    console.log('Received extract request - using enhanced metadata extraction');
     
-    // Handle async extraction
-    extractArticle().then(articleData => {
-      console.log('Extracted article data:', {
+    // Use enhanced metadata extraction
+    extractArticleWithEnhancedMetadata().then(articleData => {
+      console.log('Extracted article data with enhanced metadata:', {
         method: articleData.extractionMethod,
         title: articleData.title,
+        author: articleData.author,
+        published: articleData.publishTime,
+        siteName: articleData.siteName,
         contentLength: articleData.content ? articleData.content.length : 0,
         wordCount: articleData.wordCount,
-        imageCount: articleData.images ? articleData.images.length : 0
+        imageCount: articleData.images ? articleData.images.length : 0,
+        tagsCount: articleData.tags ? articleData.tags.length : 0,
+        readingTime: articleData.readingTime
       });
       sendResponse(articleData);
     }).catch(error => {
-      console.error('Extraction failed:', error);
+      console.error('Enhanced extraction failed:', error);
       sendResponse({ error: error.message });
     });
     

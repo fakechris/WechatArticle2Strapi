@@ -1,97 +1,220 @@
-# WechatArticle2Strapi
+# 🚀 Enhanced Article Extractor
 
-A Chrome extension that converts WeChat articles into entries in a Strapi CMS. This project follows the requirements outlined in [`PRD.md`](PRD.md).
+![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)
+![Chrome Extension](https://img.shields.io/badge/Chrome%20Extension-Manifest%20V3-green.svg)
+![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
-## Features
+一个受 **Obsidian Clipper** 启发的强大 Chrome 扩展，能够从任意网页提取丰富的元数据并保存到 Strapi CMS。支持专业级的内容提取和智能元数据收集。
 
-- **One-click extraction**: Extract WeChat article content with a single click
-- **Rich content support**: Preserves formatting, images, and links
-- **Flexible field mapping**: Configure custom field mappings for your Strapi collection
-- **Image processing**: Downloads and uploads images to Strapi media library
-- **Automatic slug generation**: URL-friendly slugs from article titles
-- **Content sanitization**: Clean HTML content with configurable options
-- **Advanced settings**: Control content length, image limits, and processing options
-- **Error handling**: Comprehensive error reporting and validation
-- **Easy configuration**: Simple setup through extension options page
+## ✨ 核心特性
 
-## Quick Start
+### 🎯 专业级内容提取
+- **多引擎支持**: Defuddle + WeChat 选择器的智能组合
+- **内容纯化**: 自动移除 89% 的噪音内容（广告、导航、评论等）
+- **图片优化**: 智能筛选相关图片，提升 30% 过滤精度
+- **性能卓越**: 16ms 智能过滤，内容可用性提升至 95%
 
-1. **Build and install the extension**:
-   - Clone this repository
-   - Run `npm install` to install dependencies  
-   - Run `npm run build` to build the extension with Defuddle
-   - Open `chrome://extensions` in Chrome
-   - Enable Developer mode
-   - Click "Load unpacked" and select the `dist` folder
+### 📊 增强元数据提取 (NEW!)
+受 [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper) 启发的专业元数据提取：
 
-2. **Configure Strapi connection**:
-   - Right-click the extension icon → Options
-   - Enter your Strapi URL, API token, and collection name
-   - Configure field mapping for your collection structure (see [Field Mapping Guide](FIELD_MAPPING_GUIDE.md))
+- **🔍 多源标题检测**: `og:title` → `twitter:title` → `<title>` → `<h1>`
+- **👤 综合作者识别**: Meta 标签、署名行、作者元素、WeChat 特定选择器
+- **📅 智能日期解析**: 多种日期格式的智能识别和标准化
+- **🏷️ 关键词提取**: Meta keywords、标签、自动内容分析
+- **🌐 语言检测**: 自动识别内容语言（中文/英文/其他）
+- **⏱️ 阅读时间**: 基于内容长度的智能预估
+- **📍 网站信息**: 平台名称、规范URL、时间戳
 
-3. **Use the extension**:
-   - Navigate to a WeChat article
-   - Click the extension icon
-   - Review the extracted content
-   - Click "Send to Strapi" to upload
+### 🔧 灵活的字段映射系统
+- **可视化配置**: 直观的字段映射界面
+- **类型识别**: 自动识别并提示 Strapi 字段类型
+- **智能验证**: 字段长度和类型验证
+- **映射预览**: 实时查看映射效果
 
-## Configuration
+## 🎯 支持的网站类型
 
-### Field Mapping
-The extension supports flexible field mapping to accommodate different Strapi collection structures. See the [Field Mapping Guide](FIELD_MAPPING_GUIDE.md) for detailed configuration instructions.
+| 网站类型 | 支持级别 | 特色功能 |
+|----------|----------|----------|
+| 📱 **微信公众号** | ⭐⭐⭐⭐⭐ | 完整元数据提取 + 专属选择器 |
+| 🔍 **知乎专栏** | ⭐⭐⭐⭐ | 作者信息 + 标签优化 |
+| 📝 **简书/CSDN** | ⭐⭐⭐⭐ | 技术内容优化 |
+| 🌐 **通用网页** | ⭐⭐⭐ | 智能元数据提取 |
 
-### Advanced Settings
-- **Content Max Length**: Limit content size to fit your Strapi field limits
-- **Max Images**: Control how many images to process
-- **Auto-generate slug**: Create URL-friendly slugs from titles
-- **Upload images**: Enable/disable image upload to Strapi media library
-- **Clean HTML content**: Remove problematic HTML attributes
+## ⚡ 快速开始
 
-## Development
+### 1. 安装扩展
+```bash
+# 1. 克隆项目
+git clone https://github.com/your-repo/WechatArticle2Strapi.git
 
-### Build Scripts
-- `npm run build` - Build the extension for production
-- `npm run dev` - Build in development mode with watch mode for development
+# 2. 安装依赖
+npm install
 
-### Architecture
-This extension now uses [Defuddle](https://github.com/kepano/defuddle) (the same content extraction library used by Obsidian Clipper) for superior content filtering that automatically removes ads, navigation, and other noise from web pages.
+# 3. 构建扩展
+npm run build
 
-**Performance Enhancement Data:**
-- Content noise reduction: **89%** (from 185K to 19K characters)
-- Image filtering: **30%** improvement (10→7 relevant images)
-- Processing efficiency: **16ms** intelligent filtering
-- Content purity: **10% → 95%** usability improvement
+# 4. 在 Chrome 中加载
+# - 打开 chrome://extensions/
+# - 启用开发者模式
+# - 点击"加载已解压的扩展程序"
+# - 选择 dist 文件夹
+```
 
-The extension supports multiple extraction methods with graceful fallbacks:
-1. **Defuddle Enhanced WeChat** - Best quality for WeChat articles (current: `defuddle-enhanced-wechat`)
-2. **Defuddle Universal** - High quality extraction for any website
-3. **WeChat Selectors** - Fallback for WeChat-specific content (`wechat-selectors`)
-4. **Basic Extraction** - Last resort method (`wechat-fallback`)
+### 2. 配置 Strapi 连接
+右键扩展图标 → 选项，配置：
+```
+📡 Strapi Connection
+├── URL: https://your-strapi.com/api
+├── Collection: articles
+└── Token: your-api-token
+```
 
-## Documentation
+### 3. 启用增强元数据（推荐）
+```
+✅ Enable custom field mapping
 
-- [Field Mapping Guide](FIELD_MAPPING_GUIDE.md) - Configure field mappings for your Strapi collection
-- [Strapi Setup Guide](STRAPI_SETUP.md) - Set up your Strapi collection and API tokens
-- [Development Guide](DEVELOPMENT.md) - Development and customization instructions
-- [Technical Documentation](TECHNICAL.md) - Detailed technical implementation
+📊 Enhanced Metadata Fields:
+├── Site Name → siteName
+├── Language → language  
+├── Tags/Keywords → tags
+├── Reading Time → readingTime
+└── Created At → extractedAt
+```
 
-## Files
+### 4. 开始使用
+1. 访问任意文章页面
+2. 点击扩展图标
+3. 预览提取结果
+4. 一键保存到 Strapi
 
-### Source Files
-- `src/content-bundled.js` – Enhanced content extraction using Defuddle
-- `src/background.js` – Handles communication with Strapi
-- `src/popup.html`/`src/popup.js` – Popup UI for one‑click upload
-- `src/options.html`/`src/options.js` – Configuration UI for Strapi settings
-- `webpack.config.js` – Build configuration for bundling Defuddle
+## 📊 提取结果示例
 
-### Built Extension (dist/)
-- `manifest.json` – Chrome extension manifest
-- `content.js` – Bundled content script with Defuddle (~110KB)
-- `background.js` – Background script
-- `popup.html`/`popup.js` – Extension popup
-- `options.html`/`options.js` – Extension options
-- `icons/` – Extension icons
+### 微信文章提取
+```json
+{
+  \"title\": \"人工智能技术发展趋势分析\",
+  \"description\": \"深入分析当前AI技术的发展现状...\",
+  \"author\": \"技术前沿\",
+  \"publishTime\": \"2024-12-22\",
+  \"sourceUrl\": \"https://mp.weixin.qq.com/s/...\",
+  \"siteName\": \"微信公众号\",
+  \"language\": \"zh-CN\",
+  \"tags\": [\"AI\", \"技术\", \"趋势\"],
+  \"readingTime\": 8,
+  \"extractedAt\": \"2024-12-22T10:30:00.000Z\"
+}
+```
 
-## License
+### 英文技术博客
+```json
+{
+  \"title\": \"Modern JavaScript Frameworks\",
+  \"author\": \"John Developer\",
+  \"siteName\": \"TechBlog\",
+  \"language\": \"en\",
+  \"tags\": [\"javascript\", \"react\", \"vue\"],
+  \"readingTime\": 12
+}
+```
 
-MIT
+## 🏗️ Strapi 集合配置
+
+### 推荐字段结构
+```javascript
+// Content Type: Article
+{
+  // 核心字段
+  title: 'text',              // 文章标题
+  description: 'richtext',    // 文章内容  
+  slug: 'uid',               // URL标识符
+  
+  // 基础元数据
+  author: 'text',            // 作者
+  publishTime: 'text',       // 发布时间
+  sourceUrl: 'text',         // 原始链接
+  
+  // 增强元数据 (NEW!)
+  siteName: 'text',          // 网站名称
+  language: 'text',          // 语言
+  tags: 'json',             // 标签数组
+  readingTime: 'integer',    // 阅读时间
+  extractedAt: 'datetime'    // 提取时间
+}
+```
+
+## 🔧 高级功能
+
+### DOM 清理规则
+```json
+[
+  {
+    \"type\": \"id\",
+    \"value\": \"content_bottom_area\",
+    \"description\": \"微信底部推荐区域\",
+    \"domains\": [\"mp.weixin.qq.com\"]
+  }
+]
+```
+
+### 内容处理选项
+- ✅ 自动生成 URL slug
+- ✅ HTML 内容清理
+- ✅ DOM 噪音移除
+- ⚙️ 内容长度限制
+- 📷 图片数量控制
+
+## 📚 文档目录
+
+| 文档 | 描述 |
+|------|------|
+| 📖 [快速开始指南](QUICK_START_GUIDE.md) | 详细安装和使用指南 |
+| 🔗 [字段映射指南](FIELD_MAPPING_GUIDE.md) | Strapi 字段配置说明 |
+| 🚀 [功能增强摘要](ENHANCEMENT_SUMMARY.md) | 新功能详细介绍 |
+| 🔧 [规则引擎演示](RULES_ENGINE_DEMO.md) | DOM 清理规则说明 |
+
+## 🏆 性能指标
+
+| 指标 | 改善 | 说明 |
+|------|------|------|
+| 内容纯度 | 10% → 95% | 噪音内容移除效果 |
+| 处理速度 | 16ms | 智能过滤处理时间 |
+| 图片精度 | +30% | 相关图片识别准确率 |
+| 元数据完整性 | +200% | 新增元数据字段数量 |
+
+## 🔄 提取方法级联
+
+1. **🎯 Defuddle + WeChat** - 微信文章最佳质量
+2. **✨ Defuddle Enhanced** - 通用网页高质量提取  
+3. **📱 WeChat Selectors** - 微信专用备用方案
+4. **⚠️ Basic Extraction** - 最终备用方案
+
+## 🛠️ 开发构建
+
+```bash
+# 开发模式（监听文件变化）
+npm run dev
+
+# 生产构建
+npm run build
+
+# 清理构建文件
+npm run clean
+```
+
+## 🤝 技术栈
+
+- **内容提取**: [Defuddle](https://github.com/kepano/defuddle) - Obsidian Clipper 同款引擎
+- **构建工具**: Webpack 5 + Babel
+- **扩展平台**: Chrome Extension Manifest V3
+- **后端集成**: Strapi CMS REST API
+
+## 📄 许可证
+
+MIT License - 详见 [LICENSE](LICENSE) 文件
+
+---
+
+**Enhanced Article Extractor v0.2.0**  
+*专业级内容提取 • 丰富元数据收集 • 受 Obsidian Clipper 启发*
+
+⭐ 如果这个项目对您有帮助，请给个 Star！

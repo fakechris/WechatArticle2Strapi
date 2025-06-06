@@ -111,7 +111,13 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
       digest: '',
       sourceUrl: '',
       images: '',
-      slug: ''  // 默认情况下也不生成slug
+      slug: '',
+      // New enhanced metadata fields
+      siteName: '',
+      language: '',
+      tags: '',
+      readingTime: '',
+      created: ''
     };
   }
   
@@ -164,11 +170,33 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
     data[fieldMap.images] = article.processedImages;
   }
   
-  // Slug字段 - 如果启用自动生成且映射了有效字段名
+    // Slug字段 - 如果启用自动生成且映射了有效字段名
   if (advancedSettings.generateSlug && fieldMap.slug && fieldMap.slug.trim()) {
     data[fieldMap.slug] = generateSlug(article.title);
   }
-  
+
+  // Enhanced metadata fields - 新增字段处理
+  if (article.siteName && fieldMap.siteName && fieldMap.siteName.trim()) {
+    data[fieldMap.siteName] = article.siteName.substring(0, 100);
+  }
+
+  if (article.language && fieldMap.language && fieldMap.language.trim()) {
+    data[fieldMap.language] = article.language.substring(0, 10);
+  }
+
+  if (article.tags && article.tags.length > 0 && fieldMap.tags && fieldMap.tags.trim()) {
+    // 可以作为JSON数组或逗号分隔字符串存储
+    data[fieldMap.tags] = JSON.stringify(article.tags);
+  }
+
+  if (article.readingTime && fieldMap.readingTime && fieldMap.readingTime.trim()) {
+    data[fieldMap.readingTime] = article.readingTime;
+  }
+
+  if (article.created && fieldMap.created && fieldMap.created.trim()) {
+    data[fieldMap.created] = article.created;
+  }
+
   // 调试信息：记录将要发送的字段
   console.log('Final data to send to Strapi:', {
     fields: Object.keys(data),
@@ -176,7 +204,7 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
     fieldMap: fieldMap,
     dataContent: data
   });
-  
+
   return data;
 }
 
