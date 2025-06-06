@@ -1,3 +1,4 @@
+/******/ (() => { // webpackBootstrap
 function updateStatus(message, isError = false) {
   const statusEl = document.getElementById('status');
   statusEl.textContent = message;
@@ -171,3 +172,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+/******/ })()
+;
