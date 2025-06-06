@@ -4,6 +4,127 @@ import Defuddle from 'defuddle';
 console.log('Defuddle imported:', typeof Defuddle);
 console.log('Defuddle class:', Defuddle);
 
+// 🛡️ 其他Extension清理器
+function cleanupOtherExtensions() {
+  let removedCount = 0;
+  
+  // 1. 移除其他Extension的图片元素
+  const extensionImages = document.querySelectorAll('img[src*="chrome-extension://"], img[src*="moz-extension://"], img[src*="extension://"]');
+  extensionImages.forEach(img => {
+    console.log('🗑️ Removing other extension image:', img.src);
+    img.remove();
+    removedCount++;
+  });
+  
+  // 2. 移除其他Extension注入的容器元素
+  const extensionContainers = document.querySelectorAll('[class*="chrome-extension"], [id*="chrome-extension"], [class*="extension"], [id*="extension"]');
+  extensionContainers.forEach(container => {
+    // 避免移除我们自己的元素
+    if (!container.closest('[data-enhanced-extractor]')) {
+      console.log('🗑️ Removing other extension container:', container.tagName, container.className, container.id);
+      container.remove();
+      removedCount++;
+    }
+  });
+  
+  // 3. 移除其他Extension的Shadow DOM
+  document.querySelectorAll('*').forEach(el => {
+    if (el.shadowRoot) {
+      const shadowImages = el.shadowRoot.querySelectorAll('img[src*="chrome-extension://"], img[src*="moz-extension://"]');
+      if (shadowImages.length > 0) {
+        console.log('🗑️ Removing shadow DOM extension images:', shadowImages.length);
+        shadowImages.forEach(img => img.remove());
+        removedCount += shadowImages.length;
+      }
+    }
+  });
+  
+  // 4. 移除具有extension URL背景的元素
+  document.querySelectorAll('*').forEach(el => {
+    const computedStyle = window.getComputedStyle(el);
+    const backgroundImage = computedStyle.backgroundImage;
+    if (backgroundImage && (backgroundImage.includes('chrome-extension://') || backgroundImage.includes('moz-extension://'))) {
+      console.log('🗑️ Removing element with extension background:', backgroundImage);
+      el.remove();
+      removedCount++;
+    }
+  });
+  
+  if (removedCount > 0) {
+    console.log(`🛡️ Extension cleanup: removed ${removedCount} other extension elements`);
+  }
+  
+  return removedCount;
+}
+
+// 定期清理其他Extension注入（因为有些Extension会动态注入）
+function startExtensionCleanupWatcher() {
+  // 等待DOM准备好
+  const initializeWatcher = () => {
+    // 确保document.body存在
+    if (!document.body) {
+      // 如果body还不存在，等待一下再试
+      setTimeout(initializeWatcher, 50);
+      return;
+    }
+    
+    // 立即执行一次清理
+    cleanupOtherExtensions();
+    
+    // 使用MutationObserver监控DOM变化
+    const observer = new MutationObserver((mutations) => {
+      let needsCleanup = false;
+      
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              // 检查新添加的节点是否包含extension内容
+              const hasExtensionContent = 
+                node.querySelector && (
+                  node.querySelector('img[src*="chrome-extension://"]') ||
+                  node.querySelector('img[src*="moz-extension://"]') ||
+                  node.matches('[class*="extension"]') ||
+                  node.matches('[id*="extension"]')
+                );
+              
+              if (hasExtensionContent) {
+                needsCleanup = true;
+              }
+            }
+          });
+        }
+      });
+      
+      if (needsCleanup) {
+        console.log('🔍 Detected extension content injection, cleaning up...');
+        setTimeout(() => cleanupOtherExtensions(), 100); // 延迟一点执行清理
+      }
+    });
+    
+    // 开始观察
+    try {
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+      console.log('🛡️ Extension cleanup watcher started');
+    } catch (error) {
+      console.error('🚨 Failed to start extension cleanup watcher:', error);
+      // 作为备用方案，使用定时器清理
+      setInterval(cleanupOtherExtensions, 2000);
+      console.log('🛡️ Using fallback timer-based cleanup');
+    }
+  };
+  
+  // 如果DOM已经准备好，立即初始化；否则等待
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeWatcher);
+  } else {
+    initializeWatcher();
+  }
+}
+
 // 规则引擎 - DOM清理规则
 const DEFAULT_CLEANUP_RULES = [
   // 微信特定的清理规则（只在微信域名生效）
@@ -980,4 +1101,7 @@ function isValidImageUrl(url) {
 
 console.log('Enhanced Smart Article Extractor content script loaded with Defuddle support');
 console.log('Current domain:', window.location.hostname);
-console.log('Defuddle available at load:', typeof Defuddle); 
+console.log('Defuddle available at load:', typeof Defuddle);
+
+// 🛡️ 启动Extension清理器以阻止其他Extension注入
+startExtensionCleanupWatcher(); 
