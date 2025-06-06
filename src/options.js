@@ -78,6 +78,38 @@ function getFieldMapping() {
   };
 }
 
+function getFieldPresets() {
+  const useFieldPresets = document.getElementById('useFieldPresets').checked;
+  
+  if (!useFieldPresets) {
+    return {
+      enabled: false,
+      presets: {}
+    };
+  }
+  
+  const presets = {};
+  const presetRows = document.querySelectorAll('.preset-field-row');
+  
+  presetRows.forEach(row => {
+    const fieldName = row.querySelector('.field-name').value.trim();
+    const fieldValue = row.querySelector('.field-value').value.trim();
+    const fieldType = row.querySelector('.field-type').value;
+    
+    if (fieldName && fieldValue) {
+      presets[fieldName] = {
+        value: fieldValue,
+        type: fieldType
+      };
+    }
+  });
+  
+  return {
+    enabled: true,
+    presets: presets
+  };
+}
+
 function getAdvancedSettings() {
   return {
     maxContentLength: parseInt(document.getElementById('maxContentLength').value) || 50000,
@@ -150,6 +182,10 @@ function load() {
         readingTime: '',
         created: ''
       }
+    },
+    fieldPresets: {
+      enabled: false,
+      presets: {}
     },
     advancedSettings: {
       maxContentLength: 50000,
@@ -225,6 +261,17 @@ function load() {
       document.getElementById('customCleanupRules').value = JSON.stringify(data.customCleanupRules, null, 2);
     }
     
+    // 预设值配置
+    const fieldPresets = data.fieldPresets || { enabled: false, presets: {} };
+    document.getElementById('useFieldPresets').checked = fieldPresets.enabled;
+    
+    if (fieldPresets.enabled) {
+      document.getElementById('fieldPresetsConfig').style.display = 'block';
+    }
+    
+    // 加载预设字段
+    loadPresetFields(fieldPresets.presets);
+    
     // 初始化显示状态
     toggleBlocksConfig();
   });
@@ -245,6 +292,7 @@ function save() {
     token: document.getElementById('token').value.trim(),
     collection: document.getElementById('collection').value.trim(),
     fieldMapping: getFieldMapping(),
+    fieldPresets: getFieldPresets(),
     advancedSettings: getAdvancedSettings(),
     enableCleanupRules: cleanupRulesSettings.enableCleanupRules,
     customCleanupRules: cleanupRulesSettings.customCleanupRules
@@ -318,6 +366,67 @@ function toggleBlocksConfig() {
   }
 }
 
+// 切换预设值配置显示
+function toggleFieldPresets() {
+  const useFieldPresets = document.getElementById('useFieldPresets').checked;
+  const configSection = document.getElementById('fieldPresetsConfig');
+  
+  if (useFieldPresets) {
+    configSection.style.display = 'block';
+  } else {
+    configSection.style.display = 'none';
+  }
+}
+
+// 加载预设字段
+function loadPresetFields(presets) {
+  const container = document.getElementById('presetFieldsList');
+  container.innerHTML = '';
+  
+  // 如果没有预设字段，添加一个空的示例行
+  if (Object.keys(presets).length === 0) {
+    addPresetFieldRow('', '', 'text');
+  } else {
+    // 加载已有的预设字段
+    Object.entries(presets).forEach(([fieldName, config]) => {
+      addPresetFieldRow(fieldName, config.value, config.type || 'text');
+    });
+  }
+}
+
+// 添加预设字段行
+function addPresetFieldRow(fieldName = '', value = '', type = 'text') {
+  const container = document.getElementById('presetFieldsList');
+  const row = document.createElement('div');
+  row.className = 'preset-field-row';
+  
+  row.innerHTML = `
+    <input type="text" class="field-name" placeholder="Field name (e.g., news_source)" value="${fieldName}">
+    <select class="field-type">
+      <option value="text" ${type === 'text' ? 'selected' : ''}>Text</option>
+      <option value="number" ${type === 'number' ? 'selected' : ''}>Number</option>
+      <option value="boolean" ${type === 'boolean' ? 'selected' : ''}>Boolean</option>
+      <option value="json" ${type === 'json' ? 'selected' : ''}>JSON</option>
+    </select>
+    <input type="text" class="field-value" placeholder="Default value (e.g., reprint)" value="${value}">
+    <button type="button" class="remove-btn">Remove</button>
+  `;
+  
+  container.appendChild(row);
+}
+
+// 移除预设字段行
+function removePresetFieldRow(button) {
+  const row = button.closest('.preset-field-row');
+  row.remove();
+  
+  // 如果没有行了，添加一个空行
+  const container = document.getElementById('presetFieldsList');
+  if (container.children.length === 0) {
+    addPresetFieldRow();
+  }
+}
+
 // 实时验证
 document.getElementById('strapiUrl').addEventListener('blur', function() {
   const url = this.value.trim();
@@ -335,6 +444,9 @@ document.getElementById('collection').addEventListener('blur', function() {
 
 // 字段映射切换事件
 document.getElementById('useFieldMapping').addEventListener('change', toggleFieldMapping);
+
+// 预设值切换事件
+document.getElementById('useFieldPresets').addEventListener('change', toggleFieldPresets);
 
 // blocks配置切换事件
 document.getElementById('putContentInBlocks').addEventListener('change', toggleBlocksConfig);
@@ -617,4 +729,18 @@ document.getElementById('restoreFile').addEventListener('change', handleFileRest
 document.getElementById('reset').addEventListener('click', resetSettings);
 
 // 页面加载事件
-document.addEventListener('DOMContentLoaded', load);
+document.addEventListener('DOMContentLoaded', function() {
+  load();
+  
+  // 添加预设字段按钮事件（需要在DOM加载后绑定）
+  document.getElementById('addPresetField').addEventListener('click', function() {
+    addPresetFieldRow();
+  });
+  
+  // 使用事件委托处理删除按钮点击（因为按钮是动态生成的）
+  document.getElementById('presetFieldsList').addEventListener('click', function(event) {
+    if (event.target && event.target.classList.contains('remove-btn')) {
+      removePresetFieldRow(event.target);
+    }
+  });
+});

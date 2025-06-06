@@ -36,6 +36,11 @@ function sanitizeContent(content, maxLength = 50000) {
     .replace(/id="[^"]*"/g, '') // 移除id属性
     .replace(/<script[^>]*>.*?<\/script>/gi, '') // 移除script标签
     .replace(/<style[^>]*>.*?<\/style>/gi, '') // 移除style标签
+    // 🔥 新增：移除扩展相关的图片标签
+    .replace(/<img[^>]*src="chrome-extension:\/\/[^"]*"[^>]*>/gi, '') // 移除chrome扩展图片
+    .replace(/<img[^>]*src="moz-extension:\/\/[^"]*"[^>]*>/gi, '') // 移除firefox扩展图片
+    .replace(/<img[^>]*src="extension:\/\/[^"]*"[^>]*>/gi, '') // 移除通用扩展图片
+    .replace(/<img[^>]*src="data:image\/svg\+xml[^"]*"[^>]*>/gi, '') // 移除内联SVG图片
     .replace(/&nbsp;/g, ' ') // 替换&nbsp;
     .replace(/\s+/g, ' ') // 合并多个空格
     .trim();
@@ -56,27 +61,77 @@ function sanitizeContent(content, maxLength = 50000) {
   return sanitized;
 }
 
-// 生成URL友好的slug
+// 简化的slug生成函数，适合Chrome扩展环境
+// 使用音译和智能转换，避免中文字符出现在URL中
 function generateSlug(title) {
-  const baseSlug = title
-    .toLowerCase()
+  console.log('🔧 生成slug - 原始标题:', title);
+  
+  // 更完善的中文字符映射表
+  const chineseCharMap = {
+    // 科技相关
+    '阿': 'a', '里': 'li', '云': 'yun', '核': 'he', '心': 'xin', '域': 'yu', '名': 'ming',
+    '被': 'bei', '拖': 'tuo', '走': 'zou', '了': 'le', '网': 'wang', '站': 'zhan',
+    '技': 'ji', '术': 'shu', '数': 'shu', '据': 'ju', '服': 'fu', '务': 'wu',
+    '系': 'xi', '统': 'tong', '管': 'guan', '理': 'li', '开': 'kai', '发': 'fa',
+    
+    // 常用字
+    '的': 'de', '是': 'shi', '在': 'zai', '有': 'you', '和': 'he', '就': 'jiu',
+    '人': 'ren', '都': 'dou', '一': 'yi', '我': 'wo', '你': 'ni', '他': 'ta',
+    '这': 'zhe', '那': 'na', '来': 'lai', '去': 'qu', '上': 'shang', '下': 'xia',
+    '大': 'da', '小': 'xiao', '新': 'xin', '老': 'lao', '好': 'hao', '中': 'zhong',
+    
+    // 新闻相关
+    '新': 'xin', '闻': 'wen', '报': 'bao', '告': 'gao', '消': 'xiao', '息': 'xi',
+    '时': 'shi', '间': 'jian', '今': 'jin', '天': 'tian', '明': 'ming', '日': 'ri',
+    '公': 'gong', '司': 'si', '企': 'qi', '业': 'ye', '产': 'chan', '品': 'pin',
+    
+    // 动作词
+    '发': 'fa', '布': 'bu', '推': 'tui', '出': 'chu', '启': 'qi', '动': 'dong',
+    '停': 'ting', '止': 'zhi', '更': 'geng', '新': 'xin', '升': 'sheng', '级': 'ji'
+  };
+  
+  let baseSlug = title
     .trim()
-    .replace(/[\s\W-]+/g, '-') // 替换空格和特殊字符为-
-    .replace(/^-+|-+$/g, '') // 移除开头和结尾的-
-    .substring(0, 50); // 限制长度
+    .toLowerCase()
+    // 先处理常见的中文标点符号
+    .replace(/[，。！？；：""''（）【】《》、]/g, '-')
+    // 处理英文标点符号
+    .replace(/[.!?;:"'()\[\]{}<>]/g, '-')
+    // 转换中文字符为拼音
+    .replace(/[\u4e00-\u9fa5]/g, function(char) {
+      return chineseCharMap[char] || 'cn';
+    })
+    // 处理连续的分隔符
+    .replace(/[-\s_]+/g, '-')
+    // 移除非字母数字和连字符的字符
+    .replace(/[^a-z0-9-]/g, '')
+    // 移除开头和结尾的连字符
+    .replace(/^-+|-+$/g, '')
+    // 限制基础长度
+    .substring(0, 25);
   
-  // 添加时间戳确保唯一性
+  console.log('🔧 生成slug - 处理后的基础slug:', baseSlug);
+  
+  // 如果基础slug为空、太短或全是通用字符，使用有意义的默认值
+  if (!baseSlug || baseSlug.length < 3 || /^(cn|zh|de|le|shi|zai)+$/.test(baseSlug)) {
+    baseSlug = 'news-article';
+    console.log('🔧 生成slug - 使用默认前缀:', baseSlug);
+  }
+  
+  // 生成唯一后缀
   const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 6); // 4位随机字符
+  const randomSuffix = Math.random().toString(36).substring(2, 5);
   
-  // 组合基础slug + 时间戳后4位 + 随机字符，确保唯一性且保持可读性
-  const uniqueSlug = `${baseSlug}-${timestamp.toString().slice(-4)}-${randomSuffix}`;
+  // 组合最终slug
+  const finalSlug = `${baseSlug}-${timestamp.toString().slice(-4)}${randomSuffix}`;
   
-  return uniqueSlug.substring(0, 60); // 稍微增加总长度限制以容纳唯一标识符
+  console.log('🔧 生成slug - 最终结果:', finalSlug);
+  
+  return finalSlug.substring(0, 50); // 确保总长度合理
 }
 
 // 验证和格式化文章数据
-function validateArticleData(article, fieldMapping, advancedSettings) {
+function validateArticleData(article, fieldMapping, advancedSettings, fieldPresets = null) {
   const errors = [];
   
   // 验证必填字段
@@ -138,9 +193,21 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
   // 内容字段 - 使用设置中的最大长度
   if (fieldMap.content && fieldMap.content.trim()) {
     const maxContentLength = advancedSettings.maxContentLength || 50000;
-    data[fieldMap.content] = advancedSettings.sanitizeContent 
-      ? sanitizeContent(article.content, maxContentLength)
-      : article.content.substring(0, maxContentLength);
+    if (advancedSettings.sanitizeContent) {
+      const originalContent = article.content;
+      const sanitizedContent = sanitizeContent(originalContent, maxContentLength);
+      
+      // 检查是否移除了扩展图片
+      const extensionImgRegex = /<img[^>]*src="(?:chrome-extension|moz-extension|extension):\/\/[^"]*"[^>]*>/gi;
+      const extensionImgsRemoved = (originalContent.match(extensionImgRegex) || []).length;
+      if (extensionImgsRemoved > 0) {
+        console.log(`🧹 内容清理：移除了 ${extensionImgsRemoved} 个扩展图片标签`);
+      }
+      
+      data[fieldMap.content] = sanitizedContent;
+    } else {
+      data[fieldMap.content] = article.content.substring(0, maxContentLength);
+    }
   }
   
   // 作者字段 - 只有在映射了有效字段名时才添加
@@ -197,11 +264,55 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
     data[fieldMap.created] = article.created;
   }
 
+  // 应用预设值
+  if (fieldPresets && fieldPresets.enabled && fieldPresets.presets) {
+    console.log('🎯 应用字段预设值:', fieldPresets.presets);
+    
+    Object.entries(fieldPresets.presets).forEach(([fieldName, config]) => {
+      if (fieldName && config.value !== undefined && config.value !== '') {
+        let processedValue = config.value;
+        
+        // 根据字段类型处理值
+        switch (config.type) {
+          case 'number':
+            processedValue = Number(config.value);
+            if (isNaN(processedValue)) {
+              console.warn(`⚠️ 预设字段 ${fieldName} 的值 "${config.value}" 不是有效数字，将作为字符串处理`);
+              processedValue = config.value;
+            }
+            break;
+          case 'boolean':
+            if (typeof config.value === 'string') {
+              processedValue = config.value.toLowerCase() === 'true' || config.value === '1';
+            } else {
+              processedValue = Boolean(config.value);
+            }
+            break;
+          case 'json':
+            try {
+              processedValue = JSON.parse(config.value);
+            } catch (error) {
+              console.warn(`⚠️ 预设字段 ${fieldName} 的JSON值无效，将作为字符串处理:`, error.message);
+              processedValue = config.value;
+            }
+            break;
+          default:
+            // text类型保持原样
+            processedValue = String(config.value);
+        }
+        
+        data[fieldName] = processedValue;
+        console.log(`✅ 应用预设值: ${fieldName} = ${JSON.stringify(processedValue)} (${config.type})`);
+      }
+    });
+  }
+
   // 调试信息：记录将要发送的字段
   console.log('Final data to send to Strapi:', {
     fields: Object.keys(data),
     fieldMappingEnabled: fieldMapping.enabled,
     fieldMap: fieldMap,
+    presetsApplied: fieldPresets?.enabled ? Object.keys(fieldPresets.presets) : [],
     dataContent: data
   });
 
@@ -215,6 +326,7 @@ const imageProcessingStatus = new Map();
 // 智能图片处理器 - 增强版
 async function processArticleImages(article) {
   console.log('🚀 启动智能图片处理系统...');
+  console.log('📊 传入的图片数据:', article.images);
   
   if (!article.images || article.images.length === 0) {
     console.log('📷 没有发现图片，跳过处理');
@@ -234,6 +346,7 @@ async function processArticleImages(article) {
   const imagesToProcess = article.images.slice(0, maxImages);
   
   console.log(`📊 开始处理 ${imagesToProcess.length} 张图片`);
+  console.log('📋 待处理图片列表:', imagesToProcess.map(img => img.src));
   
   // 创建进度追踪
   const progressTracker = {
@@ -323,13 +436,15 @@ async function sendToStrapi(article) {
   });
   
   try {
-    const config = await chrome.storage.sync.get(['strapiUrl', 'token', 'collection', 'fieldMapping', 'advancedSettings']);
+    const config = await chrome.storage.sync.get(['strapiUrl', 'token', 'collection', 'fieldMapping', 'fieldPresets', 'advancedSettings']);
     console.log('Config loaded:', {
       hasUrl: !!config.strapiUrl,
       hasToken: !!config.token,
       collection: config.collection,
       fieldMappingEnabled: config.fieldMapping?.enabled,
-      fieldMappingFields: config.fieldMapping?.fields
+      fieldMappingFields: config.fieldMapping?.fields,
+      fieldPresetsEnabled: config.fieldPresets?.enabled,
+      fieldPresetsCount: config.fieldPresets?.presets ? Object.keys(config.fieldPresets.presets).length : 0
     });
     
     // 验证配置
@@ -339,6 +454,7 @@ async function sendToStrapi(article) {
     
     // 使用默认值如果设置不存在
     const fieldMapping = config.fieldMapping || { enabled: false, fields: {} };
+    const fieldPresets = config.fieldPresets || { enabled: false, presets: {} };
     const advancedSettings = config.advancedSettings || {
       maxContentLength: 50000,
       maxImages: 10,
@@ -354,7 +470,7 @@ async function sendToStrapi(article) {
     }
     
     // 验证和格式化数据
-    const articleData = validateArticleData(processedArticle, fieldMapping, advancedSettings);
+    const articleData = validateArticleData(processedArticle, fieldMapping, advancedSettings, fieldPresets);
     
     const endpoint = `${config.strapiUrl}/api/${config.collection}`;
     
@@ -561,14 +677,51 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // 新增辅助函数支持增强的图片处理功能
 
+// 验证图片URL是否有效
+function isValidImageUrlForUpload(url) {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  
+  // 过滤掉无效的URL类型
+  const invalidPrefixes = [
+    'data:',                    // base64图片
+    'chrome-extension://',      // 浏览器扩展链接
+    'moz-extension://',         // Firefox扩展链接
+    'chrome://',               // Chrome内部页面
+    'about:',                  // 浏览器内部页面
+    'javascript:',             // JavaScript代码
+    'blob:'                    // Blob URL（通常是临时的）
+  ];
+  
+  for (const prefix of invalidPrefixes) {
+    if (url.startsWith(prefix)) {
+      return false;
+    }
+  }
+  
+  try {
+    const urlObj = new URL(url);
+    return ['http:', 'https:'].includes(urlObj.protocol);
+  } catch (error) {
+    return false;
+  }
+}
+
 // 处理单张图片的增强函数
 async function processIndividualImage(image, index, enableCompression, quality, progressTracker) {
   const maxRetries = 3;
   let lastError;
   
+  // 首先验证图片URL是否有效
+  if (!isValidImageUrlForUpload(image.src)) {
+    throw new Error(`无效的图片URL: ${image.src.substring(0, 60)}...`);
+  }
+  
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`🔄 处理图片 ${index + 1}, 尝试 ${attempt}/${maxRetries}: ${image.src.substring(0, 60)}...`);
+      console.log(`📥 原始图片URL: ${image.src}`);
       
       // 智能检测图片类型和尺寸
       const imageInfo = await analyzeImageInfo(image.src);
@@ -592,7 +745,8 @@ async function processIndividualImage(image, index, enableCompression, quality, 
       const filename = generateSmartFilename(image, imageInfo, index);
       
       // 上传到Strapi媒体库
-      console.log(`📤 上传图片到Strapi: ${filename}`);
+      console.log(`📤 准备上传图片到Strapi: ${filename}`);
+      console.log(`📤 下载后的dataUrl长度: ${imageData.dataUrl ? imageData.dataUrl.length : 'null'}`);
       const uploadResult = await uploadImageToStrapiAdvanced(imageData.dataUrl, filename, imageInfo);
       
       if (!uploadResult || !uploadResult[0]) {
@@ -601,6 +755,8 @@ async function processIndividualImage(image, index, enableCompression, quality, 
       
       const uploadedFile = uploadResult[0];
       console.log(`✨ 图片上传成功: ${uploadedFile.name} (ID: ${uploadedFile.id})`);
+      console.log(`📤 上传后的图片URL: ${uploadedFile.url}`);
+      console.log(`🔗 原始URL -> 上传后URL: ${image.src} -> ${uploadedFile.url}`);
       
       return {
         original: image.src,
@@ -756,31 +912,59 @@ async function uploadImageToStrapiAdvanced(imageDataUrl, filename, imageInfo) {
 // 智能替换内容中的图片链接
 async function smartReplaceImageInContent(content, originalUrl, newUrl) {
   if (!content || !originalUrl || !newUrl) {
+    console.log('⚠️ 图片链接替换参数不完整');
     return content;
   }
   
-  // 多种替换策略确保完全替换
+  console.log(`🔄 开始替换图片链接: ${originalUrl.substring(0, 60)}... -> ${newUrl.substring(0, 60)}...`);
+  
   let updatedContent = content;
+  let replacementCount = 0;
   
-  // 1. 直接替换完整URL
-  updatedContent = updatedContent.replace(new RegExp(escapeRegExp(originalUrl), 'g'), newUrl);
+  // 1. 直接替换完整URL (包括HTML编码版本)
+  const originalEscaped = escapeRegExp(originalUrl);
+  const htmlEncodedUrl = originalUrl.replace(/&/g, '&amp;');
+  const htmlEncodedEscaped = escapeRegExp(htmlEncodedUrl);
   
-  // 2. 替换可能的data-src属性
-  updatedContent = updatedContent.replace(
-    new RegExp(`data-src="[^"]*${escapeRegExp(originalUrl.split('/').pop())}"`, 'g'),
-    `data-src="${newUrl}"`
-  );
+  // 替换原始URL
+  const regex1 = new RegExp(originalEscaped, 'g');
+  const beforeCount1 = (updatedContent.match(regex1) || []).length;
+  updatedContent = updatedContent.replace(regex1, newUrl);
+  replacementCount += beforeCount1;
   
-  // 3. 替换src属性
-  updatedContent = updatedContent.replace(
-    new RegExp(`src="[^"]*${escapeRegExp(originalUrl.split('/').pop())}"`, 'g'),
-    `src="${newUrl}"`
-  );
+  // 替换HTML编码版本
+  if (htmlEncodedUrl !== originalUrl) {
+    const regex2 = new RegExp(htmlEncodedEscaped, 'g');
+    const beforeCount2 = (updatedContent.match(regex2) || []).length;
+    updatedContent = updatedContent.replace(regex2, newUrl);
+    replacementCount += beforeCount2;
+  }
   
-  // 4. 处理可能的URL编码情况
-  const encodedOriginal = encodeURIComponent(originalUrl);
-  if (encodedOriginal !== originalUrl) {
-    updatedContent = updatedContent.replace(new RegExp(escapeRegExp(encodedOriginal), 'g'), newUrl);
+  // 2. 更精确的src属性替换
+  const srcRegex = new RegExp(`src="([^"]*${originalEscaped}[^"]*)"`, 'g');
+  const beforeCount3 = (updatedContent.match(srcRegex) || []).length;
+  updatedContent = updatedContent.replace(srcRegex, `src="${newUrl}"`);
+  replacementCount += beforeCount3;
+  
+  // 3. 更精确的data-src属性替换
+  const dataSrcRegex = new RegExp(`data-src="([^"]*${originalEscaped}[^"]*)"`, 'g');
+  const beforeCount4 = (updatedContent.match(dataSrcRegex) || []).length;
+  updatedContent = updatedContent.replace(dataSrcRegex, `data-src="${newUrl}"`);
+  replacementCount += beforeCount4;
+  
+  // 4. 处理HTML编码的src属性
+  if (htmlEncodedUrl !== originalUrl) {
+    const htmlSrcRegex = new RegExp(`src="([^"]*${htmlEncodedEscaped}[^"]*)"`, 'g');
+    const beforeCount5 = (updatedContent.match(htmlSrcRegex) || []).length;
+    updatedContent = updatedContent.replace(htmlSrcRegex, `src="${newUrl}"`);
+    replacementCount += beforeCount5;
+  }
+  
+  console.log(`✅ 图片链接替换完成，共替换 ${replacementCount} 处`);
+  
+  if (replacementCount === 0) {
+    console.log(`⚠️ 未找到要替换的图片链接，检查原始URL: ${originalUrl}`);
+    console.log(`📝 HTML编码版本: ${htmlEncodedUrl}`);
   }
   
   return updatedContent;

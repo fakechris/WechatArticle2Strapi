@@ -157,6 +157,52 @@
     .toggle-section input[type="checkbox"] {
       margin-right: 8px;
     }
+    
+    .preset-field-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      padding: 10px;
+      background: white;
+      border: 1px solid #e9ecef;
+      border-radius: 4px;
+    }
+    
+    .preset-field-row input[type="text"] {
+      flex: 1;
+      min-width: 120px;
+    }
+    
+    .preset-field-row .field-name {
+      flex: 1;
+      min-width: 120px;
+    }
+    
+    .preset-field-row .field-value {
+      flex: 2;
+      min-width: 200px;
+    }
+    
+    .preset-field-row .field-type {
+      min-width: 80px;
+    }
+    
+    .preset-field-row .remove-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      min-width: auto;
+      width: auto;
+    }
+    
+    .preset-field-row .remove-btn:hover {
+      background: #c82333;
+    }
   </style>
 </head>
 <body>
@@ -272,6 +318,32 @@
               <div class="help-text" style="font-size: 11px;">Timestamp when content was extracted</div>
             </div>
           </div>
+        </div>
+      </div>
+      
+      <h2>🎯 Field Presets</h2>
+      <div class="help-text">Set default values for specific fields that will be automatically applied to all articles</div>
+      
+      <div class="mapping-section">
+        <div class="toggle-section">
+          <input type="checkbox" id="useFieldPresets" />
+          <label for="useFieldPresets">Enable field presets</label>
+          <div class="help-text">Automatically set predefined values for selected fields</div>
+        </div>
+        
+        <div id="fieldPresetsConfig" style="display: none;">
+          <div style="margin-bottom: 15px; padding: 10px; background: #e7f3ff; border-left: 4px solid #0066cc; border-radius: 4px;">
+            <div class="help-text" style="color: #0066cc; font-weight: 500;">💡 Tips:</div>
+            <div class="help-text" style="margin-top: 5px;">• Only fields with values will be applied</div>
+            <div class="help-text">• Preset values will override any extracted values</div>
+            <div class="help-text">• Use field names from your Strapi collection (not the mapped names)</div>
+          </div>
+          
+          <div id="presetFieldsList">
+            <!-- Preset fields will be dynamically generated here -->
+          </div>
+          
+          <button type="button" id="addPresetField" style="background: #28a745; padding: 8px 16px; font-size: 13px; margin-top: 10px;">+ Add Preset Field</button>
         </div>
       </div>
       

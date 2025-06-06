@@ -307,14 +307,20 @@ function extractWeChatArticle() {
   const images = [];
   if (contentEl) {
     const imgElements = contentEl.querySelectorAll('img[data-src], img[src]');
+    console.log(`🖼️ 从微信选择器方式找到 ${imgElements.length} 个图片元素`);
+    
     imgElements.forEach((img, index) => {
       const src = img.getAttribute('data-src') || img.src;
-      if (src && !src.startsWith('data:')) {
+      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+      if (isValidImageUrl(src)) {
+        console.log(`✅ 添加有效图片: ${src}`);
         images.push({
           src: src,
           alt: img.alt || '',
           index: index
         });
+      } else {
+        console.log(`❌ 跳过无效图片: ${src}`);
       }
     });
   }
@@ -349,17 +355,36 @@ function enhanceWithWeChatMetadata(defuddleResult) {
   tempDiv.innerHTML = defuddleResult.content;
   const imgElements = tempDiv.querySelectorAll('img');
   const images = [];
+  const seenUrls = new Set(); // 用于去重
+  
+  console.log(`🖼️ 从Defuddle清理的内容中找到 ${imgElements.length} 个图片元素`);
   
   imgElements.forEach((img, index) => {
     const src = img.getAttribute('data-src') || img.src;
-    if (src && !src.startsWith('data:')) {
+    console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+    
+    if (isValidImageUrl(src)) {
+      // 检查URL是否已经存在
+      if (seenUrls.has(src)) {
+        console.log(`🔄 跳过重复图片: ${src}`);
+        return;
+      }
+      
+      seenUrls.add(src);
+      console.log(`✅ 添加有效图片: ${src}`);
       images.push({
         src: src,
         alt: img.alt || '',
         index: index
       });
+    } else {
+      console.log(`❌ 跳过无效图片: ${src}`);
     }
   });
+  
+
+  
+  console.log(`📊 图片去重完成，最终收集到 ${images.length} 个唯一图片`);
 
   return {
     title: defuddleResult.title || '',
@@ -413,16 +438,34 @@ function extractGeneralContent() {
     tempDiv.innerHTML = result.content;
     const imgElements = tempDiv.querySelectorAll('img');
     const images = [];
+    const seenUrls = new Set(); // 用于去重
+    
+    console.log(`🖼️ 从Defuddle通用内容中找到 ${imgElements.length} 个图片元素`);
     
     imgElements.forEach((img, index) => {
-      if (img.src && !img.src.startsWith('data:')) {
+      const src = img.src;
+      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+      
+      if (isValidImageUrl(src)) {
+        // 检查URL是否已经存在
+        if (seenUrls.has(src)) {
+          console.log(`🔄 跳过重复图片: ${src}`);
+          return;
+        }
+        
+        seenUrls.add(src);
+        console.log(`✅ 添加有效图片: ${src}`);
         images.push({
-          src: img.src,
+          src: src,
           alt: img.alt || '',
           index: index
         });
+      } else {
+        console.log(`❌ 跳过无效图片: ${src}`);
       }
     });
+    
+    console.log(`📊 通用内容图片去重完成，最终收集到 ${images.length} 个唯一图片`);
     
     const finalResult = {
       title: result.title || document.title || '',
@@ -498,18 +541,37 @@ function extractBasicContent() {
   
   // Get images from the content area
   const images = [];
+  const seenUrls = new Set(); // 用于去重
+  
   if (contentEl) {
     const imgElements = contentEl.querySelectorAll('img');
+    console.log(`🖼️ 从基础内容提取中找到 ${imgElements.length} 个图片元素`);
+    
     imgElements.forEach((img, index) => {
-      if (img.src && !img.src.startsWith('data:')) {
+      const src = img.src;
+      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
+      
+      if (isValidImageUrl(src)) {
+        // 检查URL是否已经存在
+        if (seenUrls.has(src)) {
+          console.log(`🔄 跳过重复图片: ${src}`);
+          return;
+        }
+        
+        seenUrls.add(src);
+        console.log(`✅ 添加有效图片: ${src}`);
         images.push({
-          src: img.src,
+          src: src,
           alt: img.alt || '',
           index: index
         });
+      } else {
+        console.log(`❌ 跳过无效图片: ${src}`);
       }
     });
   }
+  
+  console.log(`📊 基础内容图片去重完成，最终收集到 ${images.length} 个唯一图片`);
   
   // Get title
   const title = document.querySelector('h1')?.innerText?.trim() || 
@@ -947,6 +1009,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Add debug information to console
+// 辅助函数：验证图片URL是否有效
+function isValidImageUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  
+  // 过滤掉无效的URL类型
+  const invalidPrefixes = [
+    'data:',                    // base64图片
+    'chrome-extension://',      // 浏览器扩展链接
+    'moz-extension://',         // Firefox扩展链接
+    'chrome://',               // Chrome内部页面
+    'about:',                  // 浏览器内部页面
+    'javascript:',             // JavaScript代码
+    'blob:',                   // Blob URL（通常是临时的）
+    'extension://'             // 通用扩展前缀
+  ];
+  
+  // 检查是否是无效前缀
+  for (const prefix of invalidPrefixes) {
+    if (url.startsWith(prefix)) {
+      console.log(`🚫 过滤无效图片链接: ${url.substring(0, 50)}... (${prefix})`);
+      return false;
+    }
+  }
+  
+  // 检查是否是有效的HTTP(S) URL
+  try {
+    const urlObj = new URL(url);
+    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      console.log(`🚫 过滤非HTTP图片链接: ${url.substring(0, 50)}... (${urlObj.protocol})`);
+      return false;
+    }
+  } catch (error) {
+    console.log(`🚫 过滤无效URL格式: ${url.substring(0, 50)}...`);
+    return false;
+  }
+  
+  return true;
+}
+
 console.log('Enhanced Smart Article Extractor content script loaded with Defuddle support');
 console.log('Current domain:', window.location.hostname);
 console.log('Defuddle available at load:', typeof (defuddle__WEBPACK_IMPORTED_MODULE_0___default())); 
