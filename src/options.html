@@ -270,6 +270,27 @@
         </div>
         
         <div class="toggle-section">
+          <input type="checkbox" id="enableCleanupRules" checked />
+          <label for="enableCleanupRules">Enable DOM cleanup rules</label>
+          <div class="help-text">Automatically remove ads, navigation, and noise elements</div>
+        </div>
+        
+        <div class="form-row">
+          <label>Custom Cleanup Rules</label>
+          <textarea id="customCleanupRules" rows="10" placeholder='Add custom cleanup rules in JSON format, e.g.:
+[
+  {"type": "id", "value": "content_bottom_area", "description": "Bottom content area"},
+  {"type": "class", "value": "advertisement", "description": "Ad sections", "domains": ["example.com"]},
+  {"type": "selector", "value": "div[data-ad]", "description": "Data-ad divs", "domains": ["*.google.com"]},
+  {"type": "class", "value": "popup", "description": "All popups"}
+]
+
+Supported types: id, class, tag, selector, regex-class
+Optional domains: ["domain.com", "*.subdomain.com"] (leave empty for all domains)'></textarea>
+          <div class="help-text">JSON array of cleanup rules. Each rule needs: type, value, description</div>
+        </div>
+        
+        <div class="toggle-section">
           <input type="checkbox" id="includeBlocksField" checked />
           <label for="includeBlocksField">Include blocks field (for Dynamic Zone)</label>
           <div class="help-text">Enable if your Strapi collection has a required blocks field</div>
@@ -290,10 +311,17 @@
       
       <button type="button" id="save">Save Settings</button>
       
-      <div style="margin-top: 20px; display: flex; gap: 10px;">
+      <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
         <button type="button" id="debug" style="background: #6c757d;">Show Current Settings</button>
         <button type="button" id="testData" style="background: #28a745;">Test Data Generation</button>
-        <button type="button" id="reset" style="background: #dc3545;">Reset All Settings</button>
+        <button type="button" id="backup" style="background: #17a2b8; color: white;" title="💾 下载当前设置的备份文件">💾 Backup Settings</button>
+        <input type="file" id="restoreFile" accept=".json" style="display: none;" />
+        <button type="button" id="restore" style="background: #fd7e14; color: white;" title="📂 从备份文件恢复设置">📂 Restore Settings</button>
+        <button type="button" id="reset" style="background: #dc3545; border: 2px solid #c82333; font-weight: bold;" title="⚠️ 此操作将删除所有配置数据且不可撤销！">⚠️ Reset All Settings</button>
+      </div>
+      
+      <div style="margin-top: 10px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; color: #856404; font-size: 13px;">
+        <strong>⚠️ 重置警告：</strong>Reset All Settings 按钮将永久删除所有配置，包括 Strapi URL、Token、字段映射和自定义规则。请谨慎操作！
       </div>
       
       <div id="debugOutput" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 12px; display: none;"></div>

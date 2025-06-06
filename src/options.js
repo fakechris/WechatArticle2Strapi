@@ -85,6 +85,35 @@ function getAdvancedSettings() {
   };
 }
 
+function getCleanupRulesSettings() {
+  const enableCleanupRules = document.getElementById('enableCleanupRules').checked;
+  let customCleanupRules = [];
+  
+  const customRulesText = document.getElementById('customCleanupRules').value.trim();
+  if (customRulesText) {
+    try {
+      customCleanupRules = JSON.parse(customRulesText);
+      if (!Array.isArray(customCleanupRules)) {
+        throw new Error('Custom rules must be an array');
+      }
+      // Validate rule format
+      customCleanupRules.forEach((rule, index) => {
+        if (!rule.type || !rule.value || !rule.description) {
+          throw new Error(`Rule ${index + 1} missing required fields (type, value, description)`);
+        }
+      });
+    } catch (error) {
+      alert('Invalid custom cleanup rules JSON: ' + error.message);
+      return null;
+    }
+  }
+  
+  return {
+    enableCleanupRules,
+    customCleanupRules
+  };
+}
+
 function load() {
   const defaultSettings = {
     strapiUrl: '',
@@ -115,7 +144,7 @@ function load() {
     }
   };
   
-  chrome.storage.sync.get(Object.keys(defaultSettings), data => {
+  chrome.storage.sync.get([...Object.keys(defaultSettings), 'enableCleanupRules', 'customCleanupRules'], data => {
     // 基本配置
     document.getElementById('strapiUrl').value = data.strapiUrl || defaultSettings.strapiUrl;
     document.getElementById('token').value = data.token || defaultSettings.token;
@@ -149,6 +178,12 @@ function load() {
     document.getElementById('putContentInBlocks').checked = advancedSettings.putContentInBlocks;
     document.getElementById('blocksComponentName').value = advancedSettings.blocksComponentName;
     
+    // 规则引擎设置
+    document.getElementById('enableCleanupRules').checked = data.enableCleanupRules !== false; // 默认启用
+    if (data.customCleanupRules && Array.isArray(data.customCleanupRules)) {
+      document.getElementById('customCleanupRules').value = JSON.stringify(data.customCleanupRules, null, 2);
+    }
+    
     // 初始化显示状态
     toggleBlocksConfig();
   });
@@ -159,12 +194,19 @@ function save() {
     return;
   }
   
+  const cleanupRulesSettings = getCleanupRulesSettings();
+  if (!cleanupRulesSettings) {
+    return; // Validation failed
+  }
+  
   const data = {
     strapiUrl: document.getElementById('strapiUrl').value.trim().replace(/\/$/, ''), // 移除尾部斜杠
     token: document.getElementById('token').value.trim(),
     collection: document.getElementById('collection').value.trim(),
     fieldMapping: getFieldMapping(),
-    advancedSettings: getAdvancedSettings()
+    advancedSettings: getAdvancedSettings(),
+    enableCleanupRules: cleanupRulesSettings.enableCleanupRules,
+    customCleanupRules: cleanupRulesSettings.customCleanupRules
   };
   
   // 显示保存中状态
@@ -350,48 +392,166 @@ function testDataGeneration() {
   });
 }
 
+// 备份当前设置
+function backupSettings() {
+  chrome.storage.sync.get(null, (data) => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `wechat-extractor-settings-backup-${timestamp}.json`;
+    
+    const backup = {
+      timestamp: new Date().toISOString(),
+      settings: data,
+      version: '1.0'
+    };
+    
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    
+    URL.revokeObjectURL(url);
+    updateStatus(`✅ 设置已备份到文件: ${filename}`);
+  });
+}
+
+// 恢复设置
+function restoreSettings() {
+  document.getElementById('restoreFile').click();
+}
+
+// 处理文件恢复
+function handleFileRestore(event) {
+  const file = event.target.files[0];
+  if (!file) {
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const backup = JSON.parse(e.target.result);
+      
+      // 验证备份文件格式
+      if (!backup.settings || !backup.timestamp || !backup.version) {
+        updateStatus('❌ 备份文件格式无效', true);
+        return;
+      }
+      
+      // 确认恢复
+      if (!confirm(`📂 确认恢复设置？\n\n备份时间: ${new Date(backup.timestamp).toLocaleString()}\n版本: ${backup.version}\n\n这将覆盖当前所有设置！`)) {
+        updateStatus('恢复操作已取消');
+        return;
+      }
+      
+      // 恢复设置
+      updateStatus('正在恢复设置...');
+      chrome.storage.sync.clear(() => {
+        chrome.storage.sync.set(backup.settings, () => {
+          updateStatus('✅ 设置恢复成功！正在重新加载页面...');
+          setTimeout(() => {
+            load();
+          }, 1000);
+        });
+      });
+      
+    } catch (error) {
+      updateStatus('❌ 备份文件解析失败: ' + error.message, true);
+    }
+  };
+  
+  reader.readAsText(file);
+  
+  // 清空文件输入，允许重复选择同一文件
+  event.target.value = '';
+}
+
 // 重置功能：清除所有设置
 function resetSettings() {
-  if (confirm('Are you sure you want to reset all settings? This cannot be undone.')) {
-    chrome.storage.sync.clear(() => {
-      updateStatus('All settings cleared. Please reconfigure.');
-      
-      // 设置安全的默认值
-      const safeDefaults = {
-        strapiUrl: '',
-        token: '',
-        collection: 'articles',
-        fieldMapping: {
-          enabled: true,  // 默认启用字段映射
-          fields: {
-            title: 'title',
-            content: 'description',  // 根据用户的结构设置
-            author: '',
-            publishTime: '',
-            digest: '',
-            sourceUrl: '',
-            images: '',
-            slug: 'slug'
-          }
-        },
-                            advancedSettings: {
-             maxContentLength: 50000,
-             maxImages: 10,
-             generateSlug: true,
-             uploadImages: false,  // 默认禁用图片上传
-             sanitizeContent: true,
-             includeBlocksField: true,  // 默认启用blocks字段
-             putContentInBlocks: true,  // 默认将内容放入blocks
-             blocksComponentName: 'blocks.rich-text'  // 默认组件名
-           }
-      };
-      
-      chrome.storage.sync.set(safeDefaults, () => {
-        updateStatus('Safe defaults applied. Please configure your Strapi URL and token.');
-        load(); // 重新加载页面
-      });
-    });
+  // 第一层确认：基本警告
+  if (!confirm('⚠️ 警告：此操作将删除所有配置数据！\n\n这包括：\n• Strapi URL 和 Token\n• 字段映射配置\n• 高级设置\n• 自定义清理规则\n\n此操作不可撤销，确定要继续吗？')) {
+    return;
   }
+  
+  // 询问是否需要备份
+  if (confirm('💾 建议先备份当前设置。是否现在备份？\n\n点击"确定"先备份设置，点击"取消"直接继续重置。')) {
+    backupSettings();
+    // 给用户时间保存备份文件
+    setTimeout(() => {
+      continueReset();
+    }, 2000);
+    return;
+  }
+  
+  continueReset();
+}
+
+// 继续重置流程
+function continueReset() {
+  // 第二层确认：更严格的验证
+  const confirmText = '确认重置';
+  const userInput = prompt(`⚠️ 最后确认：为了防止误操作，请输入"${confirmText}"来确认重置所有设置：`);
+  
+  if (userInput !== confirmText) {
+    updateStatus('重置操作已取消', false);
+    return;
+  }
+  
+  // 显示重置进度
+  updateStatus('正在重置设置...');
+  document.getElementById('reset').disabled = true;
+  document.getElementById('reset').textContent = '重置中...';
+  
+  chrome.storage.sync.clear(() => {
+    updateStatus('✅ 所有设置已清除，正在应用默认配置...');
+    
+    // 设置安全的默认值
+    const safeDefaults = {
+      strapiUrl: '',
+      token: '',
+      collection: 'articles',
+      fieldMapping: {
+        enabled: true,  // 默认启用字段映射
+        fields: {
+          title: 'title',
+          content: 'description',  // 根据用户的结构设置
+          author: '',
+          publishTime: '',
+          digest: '',
+          sourceUrl: '',
+          images: '',
+          slug: 'slug'
+        }
+      },
+      advancedSettings: {
+        maxContentLength: 50000,
+        maxImages: 10,
+        generateSlug: true,
+        uploadImages: false,  // 默认禁用图片上传
+        sanitizeContent: true,
+        includeBlocksField: false,  // 简化：默认禁用blocks字段
+        putContentInBlocks: false,  // 简化：默认不使用blocks
+        blocksComponentName: 'blocks.rich-text'  // 默认组件名
+      },
+      enableCleanupRules: true,  // 默认启用规则引擎
+      customCleanupRules: []     // 空的自定义规则
+    };
+    
+    chrome.storage.sync.set(safeDefaults, () => {
+      // 恢复按钮状态
+      document.getElementById('reset').disabled = false;
+      document.getElementById('reset').textContent = 'Reset All Settings';
+      
+      updateStatus('🎉 重置完成！已应用安全默认配置，请重新配置您的 Strapi URL 和 Token');
+      
+      // 重新加载页面以显示默认值
+      setTimeout(() => {
+        load();
+      }, 1000);
+    });
+  });
 }
 
 // 保存按钮事件
@@ -402,6 +562,15 @@ document.getElementById('debug').addEventListener('click', debugSettings);
 
 // 测试数据生成按钮事件
 document.getElementById('testData').addEventListener('click', testDataGeneration);
+
+// 备份按钮事件
+document.getElementById('backup').addEventListener('click', backupSettings);
+
+// 恢复按钮事件
+document.getElementById('restore').addEventListener('click', restoreSettings);
+
+// 文件选择事件
+document.getElementById('restoreFile').addEventListener('change', handleFileRestore);
 
 // 重置按钮事件
 document.getElementById('reset').addEventListener('click', resetSettings);

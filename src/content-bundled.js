@@ -4,13 +4,172 @@ import Defuddle from 'defuddle';
 console.log('Defuddle imported:', typeof Defuddle);
 console.log('Defuddle class:', Defuddle);
 
+// 规则引擎 - DOM清理规则
+const DEFAULT_CLEANUP_RULES = [
+  // 微信特定的清理规则（只在微信域名生效）
+  { type: 'id', value: 'content_bottom_area', description: '微信底部推荐区域', domains: ['mp.weixin.qq.com'] },
+  { type: 'id', value: 'js_article_comment', description: '微信评论区域', domains: ['mp.weixin.qq.com'] },
+  { type: 'id', value: 'js_tags', description: '微信标签区域', domains: ['mp.weixin.qq.com'] },
+  { type: 'class', value: 'rich_media_tool', description: '微信工具栏', domains: ['mp.weixin.qq.com'] },
+  { type: 'class', value: 'share_notice', description: '微信分享提示', domains: ['mp.weixin.qq.com'] },
+  { type: 'class', value: 'qr_code_pc', description: '微信二维码', domains: ['mp.weixin.qq.com'] },
+  { type: 'class', value: 'reward_area', description: '微信打赏区域', domains: ['mp.weixin.qq.com'] },
+  { type: 'class', value: 'promotion_area', description: '推广区域', domains: ['mp.weixin.qq.com'] },
+  
+  // 知乎特定规则
+  { type: 'class', value: 'RichContent-actions', description: '知乎操作栏', domains: ['zhuanlan.zhihu.com', 'www.zhihu.com'] },
+  { type: 'class', value: 'ContentItem-actions', description: '知乎内容操作', domains: ['zhuanlan.zhihu.com', 'www.zhihu.com'] },
+  { type: 'class', value: 'Recommendations-Main', description: '知乎推荐', domains: ['zhuanlan.zhihu.com', 'www.zhihu.com'] },
+  
+  // 简书特定规则
+  { type: 'class', value: 'follow-detail', description: '简书关注详情', domains: ['www.jianshu.com'] },
+  { type: 'class', value: 'recommendation', description: '简书推荐', domains: ['www.jianshu.com'] },
+  
+  // CSDN特定规则
+  { type: 'class', value: 'tool-box', description: 'CSDN工具箱', domains: ['blog.csdn.net'] },
+  { type: 'class', value: 'recommend-box', description: 'CSDN推荐', domains: ['blog.csdn.net'] },
+  
+  // 通用广告和噪音清理（适用于所有网站）
+  { type: 'class', value: 'advertisement', description: '广告区域' },
+  { type: 'class', value: 'ads', description: '广告' },
+  { type: 'class', value: 'banner', description: '横幅广告' },
+  { type: 'class', value: 'sidebar', description: '侧边栏' },
+  { type: 'class', value: 'footer', description: '页脚' },
+  { type: 'class', value: 'navigation', description: '导航栏' },
+  { type: 'class', value: 'nav', description: '导航' },
+  { type: 'class', value: 'menu', description: '菜单' },
+  { type: 'class', value: 'social-share', description: '社交分享' },
+  { type: 'class', value: 'comments', description: '评论区' },
+  { type: 'class', value: 'related-articles', description: '相关文章' },
+  
+  // 标签级别清理（适用于所有网站）
+  { type: 'tag', value: 'script', description: '脚本标签' },
+  { type: 'tag', value: 'style', description: '样式标签' },
+  { type: 'tag', value: 'noscript', description: 'NoScript标签' }
+];
+
+// 检查域名是否匹配规则
+function isDomainMatched(rule, currentHostname) {
+  // 如果规则没有指定domains，则适用于所有域名
+  if (!rule.domains || !Array.isArray(rule.domains) || rule.domains.length === 0) {
+    return true;
+  }
+  
+  // 检查当前hostname是否匹配任何指定域名
+  return rule.domains.some(domain => {
+    // 精确匹配
+    if (currentHostname === domain) {
+      return true;
+    }
+    // 支持通配符匹配（例如: *.zhihu.com）
+    if (domain.startsWith('*.')) {
+      const baseDomain = domain.substring(2);
+      return currentHostname.endsWith('.' + baseDomain) || currentHostname === baseDomain;
+    }
+    return false;
+  });
+}
+
+// 应用DOM清理规则
+function applyCleanupRules(targetDocument, rules = DEFAULT_CLEANUP_RULES) {
+  const currentHostname = window.location.hostname;
+  console.log('🧹 Applying DOM cleanup rules:', rules.length, 'for domain:', currentHostname);
+  
+  let removedCount = 0;
+  let appliedRules = 0;
+  let skippedRules = 0;
+  
+  rules.forEach(rule => {
+    try {
+      // 检查域名匹配
+      if (!isDomainMatched(rule, currentHostname)) {
+        skippedRules++;
+        console.log(`⏭️ Skipping rule for different domain: ${rule.description} (domains: ${rule.domains?.join(', ') || 'all'})`);
+        return;
+      }
+      
+      appliedRules++;
+      let elements = [];
+      
+      switch (rule.type) {
+        case 'id':
+          const elementById = targetDocument.getElementById(rule.value);
+          if (elementById) elements = [elementById];
+          break;
+          
+        case 'class':
+          elements = Array.from(targetDocument.getElementsByClassName(rule.value));
+          break;
+          
+        case 'tag':
+          elements = Array.from(targetDocument.getElementsByTagName(rule.value));
+          break;
+          
+        case 'selector':
+          elements = Array.from(targetDocument.querySelectorAll(rule.value));
+          break;
+          
+        case 'regex-class':
+          // 通过正则表达式匹配class名
+          const allElements = targetDocument.querySelectorAll('[class]');
+          const regex = new RegExp(rule.value, 'i');
+          elements = Array.from(allElements).filter(el => 
+            Array.from(el.classList).some(className => regex.test(className))
+          );
+          break;
+      }
+      
+      if (elements.length > 0) {
+        const domainInfo = rule.domains ? ` [${rule.domains.join(', ')}]` : ' [all domains]';
+        console.log(`🗑️ Removing ${elements.length} elements for rule: ${rule.description} (${rule.type}: ${rule.value})${domainInfo}`);
+        elements.forEach(element => {
+          element.remove();
+          removedCount++;
+        });
+      }
+    } catch (error) {
+      console.warn(`❌ Error applying cleanup rule ${rule.type}:${rule.value}:`, error);
+    }
+  });
+  
+  console.log(`✅ DOM cleanup completed for ${currentHostname}:`);
+  console.log(`   📊 Applied rules: ${appliedRules}`);
+  console.log(`   ⏭️ Skipped rules: ${skippedRules}`);
+  console.log(`   🗑️ Removed elements: ${removedCount}`);
+  return removedCount;
+}
+
 // Enhanced content extraction using Defuddle for superior content filtering
-function extractArticle() {
+async function extractArticle() {
   try {
     // Check if we're on a WeChat article page
     const isWeChatArticle = window.location.hostname === 'mp.weixin.qq.com';
     
     console.log('Starting extraction. WeChat article:', isWeChatArticle);
+    
+    // Apply cleanup rules BEFORE extraction for better results
+    console.log('🚀 Starting pre-processing with cleanup rules...');
+    
+    // Load custom cleanup rules from storage
+    let cleanupRules = DEFAULT_CLEANUP_RULES;
+    try {
+      const storage = await chrome.storage.sync.get(['customCleanupRules', 'enableCleanupRules']);
+      if (storage.enableCleanupRules !== false) { // enabled by default
+        if (storage.customCleanupRules && Array.isArray(storage.customCleanupRules)) {
+          // Merge custom rules with default rules
+          cleanupRules = [...DEFAULT_CLEANUP_RULES, ...storage.customCleanupRules];
+          console.log('📝 Loaded custom cleanup rules:', storage.customCleanupRules.length);
+        }
+      } else {
+        console.log('⏸️ Cleanup rules disabled by user');
+        cleanupRules = [];
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not load custom cleanup rules, using defaults:', error);
+    }
+    
+    const removedElements = applyCleanupRules(document, cleanupRules);
+    console.log(`🎯 Pre-processing complete. Removed ${removedElements} noise elements.`);
     
     if (isWeChatArticle) {
       // Use enhanced WeChat-specific extraction
@@ -330,15 +489,23 @@ async function downloadImage(imageUrl) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'extract') {
     console.log('Received extract request');
-    const articleData = extractArticle();
-    console.log('Extracted article data:', {
-      method: articleData.extractionMethod,
-      title: articleData.title,
-      contentLength: articleData.content ? articleData.content.length : 0,
-      wordCount: articleData.wordCount,
-      imageCount: articleData.images ? articleData.images.length : 0
+    
+    // Handle async extraction
+    extractArticle().then(articleData => {
+      console.log('Extracted article data:', {
+        method: articleData.extractionMethod,
+        title: articleData.title,
+        contentLength: articleData.content ? articleData.content.length : 0,
+        wordCount: articleData.wordCount,
+        imageCount: articleData.images ? articleData.images.length : 0
+      });
+      sendResponse(articleData);
+    }).catch(error => {
+      console.error('Extraction failed:', error);
+      sendResponse({ error: error.message });
     });
-    sendResponse(articleData);
+    
+    return true; // Keep message channel open for async response
   } else if (msg.type === 'downloadImage') {
     downloadImage(msg.url).then(dataUrl => {
       sendResponse({ success: true, dataUrl });
