@@ -208,55 +208,108 @@ function validateArticleData(article, fieldMapping, advancedSettings) {
   return data;
 }
 
-// 处理文章内容中的图片
+// 图片处理队列和状态管理
+const imageProcessingQueue = [];
+const imageProcessingStatus = new Map();
+
+// 智能图片处理器 - 增强版
 async function processArticleImages(article) {
+  console.log('🚀 启动智能图片处理系统...');
+  
   if (!article.images || article.images.length === 0) {
+    console.log('📷 没有发现图片，跳过处理');
     return article;
   }
+
+  const config = await chrome.storage.sync.get(['advancedSettings']);
+  const settings = config.advancedSettings || {};
+  const maxImages = settings.maxImages || 20;
+  const enableImageCompression = settings.enableImageCompression !== false;
+  const imageQuality = settings.imageQuality || 0.8;
+  
+  console.log(`🔧 图片处理设置: 最大数量=${maxImages}, 压缩=${enableImageCompression}, 质量=${imageQuality}`);
   
   const processedImages = [];
   let updatedContent = article.content;
-  
-  // 限制处理的图片数量
-  const maxImages = 10;
   const imagesToProcess = article.images.slice(0, maxImages);
   
-  for (const image of imagesToProcess) {
-    try {
-      // 下载图片
-      const tab = await chrome.tabs.query({ active: true, currentWindow: true });
-      const imageData = await chrome.tabs.sendMessage(tab[0].id, {
-        type: 'downloadImage',
-        url: image.src
-      });
+  console.log(`📊 开始处理 ${imagesToProcess.length} 张图片`);
+  
+  // 创建进度追踪
+  const progressTracker = {
+    total: imagesToProcess.length,
+    processed: 0,
+    successful: 0,
+    failed: 0,
+    startTime: Date.now()
+  };
+
+  // 批量处理图片（并发处理以提高效率）
+  const batchSize = 3; // 同时处理3张图片
+  const batches = [];
+  
+  for (let i = 0; i < imagesToProcess.length; i += batchSize) {
+    batches.push(imagesToProcess.slice(i, i + batchSize));
+  }
+
+  for (const batch of batches) {
+    const batchPromises = batch.map((image, batchIndex) => 
+      processIndividualImage(image, batchIndex, enableImageCompression, imageQuality, progressTracker)
+    );
+    
+    const batchResults = await Promise.allSettled(batchPromises);
+    
+    for (let i = 0; i < batchResults.length; i++) {
+      const result = batchResults[i];
+      const originalImage = batch[i];
       
-      if (imageData && imageData.success) {
-        // 上传到Strapi
-        const filename = `wechat-image-${Date.now()}-${image.index}.jpg`;
-        const uploadResult = await uploadImageToStrapi(imageData.dataUrl, filename);
+      if (result.status === 'fulfilled' && result.value) {
+        const processedImage = result.value;
+        processedImages.push(processedImage);
         
-        if (uploadResult && uploadResult[0]) {
-          const newImageUrl = uploadResult[0].url;
-          processedImages.push({
-            original: image.src,
-            uploaded: newImageUrl,
-            id: uploadResult[0].id
-          });
-          
-          // 替换内容中的图片链接
-          updatedContent = updatedContent.replace(image.src, newImageUrl);
-        }
+        // 智能替换内容中的图片链接
+        updatedContent = await smartReplaceImageInContent(
+          updatedContent, 
+          originalImage.src, 
+          processedImage.uploaded
+        );
+        
+        progressTracker.successful++;
+        console.log(`✅ 图片 ${progressTracker.processed + 1}/${progressTracker.total} 处理成功`);
+      } else {
+        progressTracker.failed++;
+        console.log(`❌ 图片 ${progressTracker.processed + 1}/${progressTracker.total} 处理失败:`, 
+          result.reason || '未知错误');
       }
-    } catch (error) {
-      console.error('Error processing image:', error);
-      // 继续处理其他图片，不要因为一个图片失败而中断整个流程
+      
+      progressTracker.processed++;
+    }
+    
+    // 批次间短暂延迟，避免过载
+    if (batches.indexOf(batch) < batches.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
+
+  const processingTime = Date.now() - progressTracker.startTime;
   
+  console.log(`🎉 图片处理完成! 
+    ✅ 成功: ${progressTracker.successful}
+    ❌ 失败: ${progressTracker.failed}
+    ⏱️ 耗时: ${processingTime}ms
+    🚀 平均速度: ${Math.round(processingTime / progressTracker.total)}ms/图片`);
+
   return {
     ...article,
     content: updatedContent,
-    processedImages
+    processedImages,
+    imageProcessingStats: {
+      total: progressTracker.total,
+      successful: progressTracker.successful,
+      failed: progressTracker.failed,
+      processingTime,
+      averageTime: Math.round(processingTime / progressTracker.total)
+    }
   };
 }
 
@@ -505,3 +558,235 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 保持消息通道开放
   }
 });
+
+// 新增辅助函数支持增强的图片处理功能
+
+// 处理单张图片的增强函数
+async function processIndividualImage(image, index, enableCompression, quality, progressTracker) {
+  const maxRetries = 3;
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 处理图片 ${index + 1}, 尝试 ${attempt}/${maxRetries}: ${image.src.substring(0, 60)}...`);
+      
+      // 智能检测图片类型和尺寸
+      const imageInfo = await analyzeImageInfo(image.src);
+      
+      // 下载图片
+      const tab = await chrome.tabs.query({ active: true, currentWindow: true });
+      const imageData = await chrome.tabs.sendMessage(tab[0].id, {
+        type: 'downloadImage',
+        url: image.src,
+        enableCompression,
+        quality,
+        maxWidth: 1200,
+        maxHeight: 800
+      });
+      
+      if (!imageData || !imageData.success) {
+        throw new Error(`图片下载失败: ${imageData?.error || '未知错误'}`);
+      }
+      
+      // 生成智能文件名
+      const filename = generateSmartFilename(image, imageInfo, index);
+      
+      // 上传到Strapi媒体库
+      console.log(`📤 上传图片到Strapi: ${filename}`);
+      const uploadResult = await uploadImageToStrapiAdvanced(imageData.dataUrl, filename, imageInfo);
+      
+      if (!uploadResult || !uploadResult[0]) {
+        throw new Error('Strapi上传返回空结果');
+      }
+      
+      const uploadedFile = uploadResult[0];
+      console.log(`✨ 图片上传成功: ${uploadedFile.name} (ID: ${uploadedFile.id})`);
+      
+      return {
+        original: image.src,
+        uploaded: uploadedFile.url,
+        id: uploadedFile.id,
+        filename: uploadedFile.name,
+        size: uploadedFile.size,
+        mimeType: uploadedFile.mime,
+        width: uploadedFile.width,
+        height: uploadedFile.height,
+        processedAt: new Date().toISOString(),
+        attempts: attempt,
+        imageInfo
+      };
+      
+    } catch (error) {
+      lastError = error;
+      console.log(`⚠️ 图片处理尝试 ${attempt} 失败:`, error.message);
+      
+      if (attempt < maxRetries) {
+        // 指数退避重试策略
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`⏳ ${delay}ms 后重试...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  console.log(`💥 图片处理最终失败:`, lastError);
+  throw lastError;
+}
+
+// 分析图片信息
+async function analyzeImageInfo(imageUrl) {
+  try {
+    const urlParts = new URL(imageUrl);
+    const pathParts = urlParts.pathname.split('/');
+    const filename = pathParts[pathParts.length - 1];
+    const extension = filename.split('.').pop()?.toLowerCase();
+    
+    return {
+      url: imageUrl,
+      domain: urlParts.hostname,
+      filename,
+      extension,
+      isWeChatImage: urlParts.hostname.includes('weixin') || urlParts.hostname.includes('qq.com'),
+      estimatedType: getImageTypeFromExtension(extension),
+      timestamp: Date.now()
+    };
+  } catch (error) {
+    console.warn('图片信息分析失败:', error);
+    return {
+      url: imageUrl,
+      timestamp: Date.now()
+    };
+  }
+}
+
+// 根据扩展名判断图片类型
+function getImageTypeFromExtension(extension) {
+  const typeMap = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml'
+  };
+  return typeMap[extension] || 'image/jpeg';
+}
+
+// 生成智能文件名
+function generateSmartFilename(image, imageInfo, index) {
+  const timestamp = Date.now();
+  const randomId = Math.random().toString(36).substr(2, 8);
+  
+  let baseName = 'wechat-article-image';
+  
+  // 如果是微信图片，添加特殊标识
+  if (imageInfo.isWeChatImage) {
+    baseName = 'wechat-mp-image';
+  }
+  
+  // 添加图片索引
+  baseName += `-${index + 1}`;
+  
+  // 添加时间戳和随机ID确保唯一性
+  baseName += `-${timestamp}-${randomId}`;
+  
+  // 确定文件扩展名
+  const extension = imageInfo.extension || 'jpg';
+  
+  return `${baseName}.${extension}`;
+}
+
+// 增强的Strapi图片上传函数
+async function uploadImageToStrapiAdvanced(imageDataUrl, filename, imageInfo) {
+  const config = await chrome.storage.sync.get(['strapiUrl', 'token']);
+  
+  if (!config.strapiUrl || !config.token) {
+    throw new Error('Strapi配置不完整');
+  }
+  
+  try {
+    // 将base64转换为blob
+    const response = await fetch(imageDataUrl);
+    const blob = await response.blob();
+    
+    // 验证图片大小
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (blob.size > maxSize) {
+      throw new Error(`图片过大: ${Math.round(blob.size / 1024 / 1024)}MB > 10MB`);
+    }
+    
+    const formData = new FormData();
+    formData.append('files', blob, filename);
+    
+    // 添加额外的元数据
+    if (imageInfo) {
+      formData.append('fileInfo', JSON.stringify({
+        caption: `来自微信文章的图片: ${filename}`,
+        alternativeText: imageInfo.filename || filename,
+        name: filename
+      }));
+    }
+    
+    console.log(`📤 开始上传: ${filename} (${Math.round(blob.size / 1024)}KB)`);
+    
+    const uploadResponse = await fetch(`${config.strapiUrl}/api/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.token}`
+      },
+      body: formData
+    });
+    
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`上传失败 (${uploadResponse.status}): ${errorText}`);
+    }
+    
+    const result = await uploadResponse.json();
+    console.log(`✅ 上传成功: ${filename}`);
+    
+    return result;
+    
+  } catch (error) {
+    console.error(`❌ 图片上传失败 (${filename}):`, error);
+    throw error;
+  }
+}
+
+// 智能替换内容中的图片链接
+async function smartReplaceImageInContent(content, originalUrl, newUrl) {
+  if (!content || !originalUrl || !newUrl) {
+    return content;
+  }
+  
+  // 多种替换策略确保完全替换
+  let updatedContent = content;
+  
+  // 1. 直接替换完整URL
+  updatedContent = updatedContent.replace(new RegExp(escapeRegExp(originalUrl), 'g'), newUrl);
+  
+  // 2. 替换可能的data-src属性
+  updatedContent = updatedContent.replace(
+    new RegExp(`data-src="[^"]*${escapeRegExp(originalUrl.split('/').pop())}"`, 'g'),
+    `data-src="${newUrl}"`
+  );
+  
+  // 3. 替换src属性
+  updatedContent = updatedContent.replace(
+    new RegExp(`src="[^"]*${escapeRegExp(originalUrl.split('/').pop())}"`, 'g'),
+    `src="${newUrl}"`
+  );
+  
+  // 4. 处理可能的URL编码情况
+  const encodedOriginal = encodeURIComponent(originalUrl);
+  if (encodedOriginal !== originalUrl) {
+    updatedContent = updatedContent.replace(new RegExp(escapeRegExp(encodedOriginal), 'g'), newUrl);
+  }
+  
+  return updatedContent;
+}
+
+// 辅助函数：转义正则表达式特殊字符
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

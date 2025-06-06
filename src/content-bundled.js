@@ -726,19 +726,106 @@ async function extractArticleWithEnhancedMetadata() {
   }
 }
 
-async function downloadImage(imageUrl) {
+async function downloadImage(imageUrl, options = {}) {
   try {
-    const response = await fetch(imageUrl);
+    console.log(`🖼️ 开始下载图片: ${imageUrl.substring(0, 80)}...`);
+    
+    // 添加防盗链headers
+    const response = await fetch(imageUrl, {
+      headers: {
+        'Referer': window.location.href,
+        'User-Agent': navigator.userAgent
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const blob = await response.blob();
-    return new Promise((resolve) => {
+    console.log(`📦 图片下载成功: ${Math.round(blob.size / 1024)}KB`);
+    
+    // 验证是否为图片
+    if (!blob.type.startsWith('image/')) {
+      throw new Error(`文件类型错误: ${blob.type}, 期望图片类型`);
+    }
+    
+    // 如果启用压缩，处理图片
+    if (options.enableCompression) {
+      const compressedDataUrl = await compressImage(blob, options);
+      console.log(`🗜️ 图片压缩完成`);
+      return compressedDataUrl;
+    } else {
+      // 直接转换为data URL
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+    
+  } catch (error) {
+    console.error(`❌ 图片下载失败 (${imageUrl}):`, error);
+    return null;
+  }
+}
+
+// 智能图片压缩函数
+async function compressImage(blob, options = {}) {
+  const {
+    quality = 0.8,
+    maxWidth = 1200,
+    maxHeight = 800,
+    format = 'image/jpeg'
+  } = options;
+  
+  return new Promise((resolve) => {
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    img.onload = () => {
+      // 计算新尺寸
+      let { width, height } = img;
+      
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+        console.log(`📏 调整图片尺寸: ${img.width}x${img.height} → ${width}x${height}`);
+      }
+      
+      // 设置canvas尺寸
+      canvas.width = width;
+      canvas.height = height;
+      
+      // 绘制图片
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // 输出压缩后的图片
+      const compressedDataUrl = canvas.toDataURL(format, quality);
+      
+      // 计算压缩率
+      const originalSize = blob.size;
+      const compressedSize = Math.round(compressedDataUrl.length * 0.75); // base64大约比原始大33%
+      const compressionRatio = Math.round((1 - compressedSize / originalSize) * 100);
+      
+      console.log(`🎯 压缩统计: ${Math.round(originalSize/1024)}KB → ${Math.round(compressedSize/1024)}KB (压缩${compressionRatio}%)`);
+      
+      resolve(compressedDataUrl);
+    };
+    
+    img.onerror = () => {
+      console.warn('⚠️ 图片压缩失败，使用原图');
+      // 如果压缩失败，返回原图
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);
       reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error('Error downloading image:', error);
-    return null;
-  }
+    };
+    
+    // 创建图片对象URL
+    img.src = URL.createObjectURL(blob);
+  });
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -767,8 +854,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     
     return true; // Keep message channel open for async response
   } else if (msg.type === 'downloadImage') {
-    downloadImage(msg.url).then(dataUrl => {
-      sendResponse({ success: true, dataUrl });
+    const options = {
+      enableCompression: msg.enableCompression || false,
+      quality: msg.quality || 0.8,
+      maxWidth: msg.maxWidth || 1200,
+      maxHeight: msg.maxHeight || 800
+    };
+    
+    downloadImage(msg.url, options).then(dataUrl => {
+      if (dataUrl) {
+        sendResponse({ success: true, dataUrl });
+      } else {
+        sendResponse({ success: false, error: '图片下载失败' });
+      }
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
     });

@@ -87,7 +87,14 @@ function getAdvancedSettings() {
     sanitizeContent: document.getElementById('sanitizeContent').checked,
     includeBlocksField: document.getElementById('includeBlocksField').checked,
     putContentInBlocks: document.getElementById('putContentInBlocks').checked,
-    blocksComponentName: document.getElementById('blocksComponentName').value.trim() || 'blocks.rich-text'
+    blocksComponentName: document.getElementById('blocksComponentName').value.trim() || 'blocks.rich-text',
+    // 新增图片处理设置
+    enableImageCompression: document.getElementById('enableImageCompression').checked,
+    imageQuality: parseFloat(document.getElementById('imageQuality').value) || 0.8,
+    maxImageWidth: parseInt(document.getElementById('maxImageWidth').value) || 1200,
+    maxImageHeight: parseInt(document.getElementById('maxImageHeight').value) || 800,
+    smartImageReplace: document.getElementById('smartImageReplace').checked,
+    retryFailedImages: document.getElementById('retryFailedImages').checked
   };
 }
 
@@ -152,7 +159,14 @@ function load() {
       sanitizeContent: true,
       includeBlocksField: true,
       putContentInBlocks: false,
-      blocksComponentName: 'blocks.rich-text'
+      blocksComponentName: 'blocks.rich-text',
+      // 图片处理默认设置
+      enableImageCompression: true,
+      imageQuality: 0.8,
+      maxImageWidth: 1200,
+      maxImageHeight: 800,
+      smartImageReplace: true,
+      retryFailedImages: true
     }
   };
   
@@ -196,6 +210,14 @@ function load() {
     document.getElementById('includeBlocksField').checked = advancedSettings.includeBlocksField;
     document.getElementById('putContentInBlocks').checked = advancedSettings.putContentInBlocks;
     document.getElementById('blocksComponentName').value = advancedSettings.blocksComponentName;
+    
+    // 图片处理设置
+    document.getElementById('enableImageCompression').checked = advancedSettings.enableImageCompression !== false;
+    document.getElementById('imageQuality').value = advancedSettings.imageQuality || 0.8;
+    document.getElementById('maxImageWidth').value = advancedSettings.maxImageWidth || 1200;
+    document.getElementById('maxImageHeight').value = advancedSettings.maxImageHeight || 800;
+    document.getElementById('smartImageReplace').checked = advancedSettings.smartImageReplace !== false;
+    document.getElementById('retryFailedImages').checked = advancedSettings.retryFailedImages !== false;
     
     // 规则引擎设置
     document.getElementById('enableCleanupRules').checked = data.enableCleanupRules !== false; // 默认启用

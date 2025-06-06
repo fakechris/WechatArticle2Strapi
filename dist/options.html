@@ -300,6 +300,46 @@
           <label for="uploadImages">Upload images to Strapi</label>
         </div>
         
+        <div style="margin-left: 20px; padding: 10px; background: #f0f9ff; border-left: 4px solid #0ea5e9; border-radius: 4px;">
+          <h4 style="margin: 0 0 10px 0; color: #0ea5e9;">🖼️ 智能图片处理设置 (Enhanced!)</h4>
+          
+          <div class="toggle-section">
+            <input type="checkbox" id="enableImageCompression" checked />
+            <label for="enableImageCompression">启用图片压缩优化</label>
+            <div class="help-text">智能压缩图片以节省空间和提高加载速度</div>
+          </div>
+          
+          <div class="form-row">
+            <label>图片质量 (0.1-1.0)</label>
+            <input type="number" id="imageQuality" value="0.8" min="0.1" max="1.0" step="0.1" />
+            <div class="help-text">压缩质量，1.0为最高质量，0.1为最小文件</div>
+          </div>
+          
+          <div class="form-row">
+            <label>最大宽度 (px)</label>
+            <input type="number" id="maxImageWidth" value="1200" min="300" max="2000" />
+            <div class="help-text">图片最大宽度，超过会等比例缩放</div>
+          </div>
+          
+          <div class="form-row">
+            <label>最大高度 (px)</label>
+            <input type="number" id="maxImageHeight" value="800" min="200" max="1500" />
+            <div class="help-text">图片最大高度，超过会等比例缩放</div>
+          </div>
+          
+          <div class="toggle-section">
+            <input type="checkbox" id="smartImageReplace" checked />
+            <label for="smartImageReplace">智能图片链接替换</label>
+            <div class="help-text">自动替换文章内所有图片链接为Strapi地址</div>
+          </div>
+          
+          <div class="toggle-section">
+            <input type="checkbox" id="retryFailedImages" checked />
+            <label for="retryFailedImages">失败图片重试机制</label>
+            <div class="help-text">自动重试失败的图片下载和上传</div>
+          </div>
+        </div>
+        
         <div class="toggle-section">
           <input type="checkbox" id="sanitizeContent" checked />
           <label for="sanitizeContent">Clean HTML content</label>
