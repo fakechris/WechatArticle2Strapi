@@ -1,3 +1,6 @@
+// 导入slug库用于生成URL友好的标识符
+import slug from 'slug';
+
 // 上传图片到Strapi媒体库
 async function uploadImageToStrapi(imageDataUrl, filename) {
   const config = await chrome.storage.sync.get(['strapiUrl', 'token']);
@@ -62,72 +65,94 @@ function sanitizeContent(content, maxLength = 50000) {
 }
 
 // 简化的slug生成函数，适合Chrome扩展环境
-// 使用音译和智能转换，避免中文字符出现在URL中
+// 使用现代化的slug库生成URL友好的标识符（支持中文转拼音）
 function generateSlug(title) {
   console.log('🔧 生成slug - 原始标题:', title);
   
-  // 更完善的中文字符映射表
-  const chineseCharMap = {
-    // 科技相关
-    '阿': 'a', '里': 'li', '云': 'yun', '核': 'he', '心': 'xin', '域': 'yu', '名': 'ming',
-    '被': 'bei', '拖': 'tuo', '走': 'zou', '了': 'le', '网': 'wang', '站': 'zhan',
-    '技': 'ji', '术': 'shu', '数': 'shu', '据': 'ju', '服': 'fu', '务': 'wu',
-    '系': 'xi', '统': 'tong', '管': 'guan', '理': 'li', '开': 'kai', '发': 'fa',
+  let baseSlug;
+  try {
+    // 使用导入的slug库，配置中文转拼音
+    const slugOptions = {
+      replacement: '-',     // 替换字符
+      remove: /[*+~.()'"!:@]/g, // 移除的字符
+      lower: true,          // 转为小写
+      strict: false,        // 非严格模式，保留更多字符
+      locale: 'zh',         // 指定中文语言环境
+      trim: true            // 修剪首尾空白
+    };
     
-    // 常用字
-    '的': 'de', '是': 'shi', '在': 'zai', '有': 'you', '和': 'he', '就': 'jiu',
-    '人': 'ren', '都': 'dou', '一': 'yi', '我': 'wo', '你': 'ni', '他': 'ta',
-    '这': 'zhe', '那': 'na', '来': 'lai', '去': 'qu', '上': 'shang', '下': 'xia',
-    '大': 'da', '小': 'xiao', '新': 'xin', '老': 'lao', '好': 'hao', '中': 'zhong',
+    // 先清理标题
+    const cleanTitle = title
+      .trim()
+      .substring(0, 60) // 限制原始标题长度
+      .replace(/[，。！？；：""''（）【】《》、]/g, ' ') // 中文标点转空格
+      .replace(/\s+/g, ' ') // 合并多个空格
+      .trim();
     
-    // 新闻相关
-    '新': 'xin', '闻': 'wen', '报': 'bao', '告': 'gao', '消': 'xiao', '息': 'xi',
-    '时': 'shi', '间': 'jian', '今': 'jin', '天': 'tian', '明': 'ming', '日': 'ri',
-    '公': 'gong', '司': 'si', '企': 'qi', '业': 'ye', '产': 'chan', '品': 'pin',
+    // 使用slug库生成
+    baseSlug = slug(cleanTitle, slugOptions);
     
-    // 动作词
-    '发': 'fa', '布': 'bu', '推': 'tui', '出': 'chu', '启': 'qi', '动': 'dong',
-    '停': 'ting', '止': 'zhi', '更': 'geng', '新': 'xin', '升': 'sheng', '级': 'ji'
-  };
+    // 限制基础slug长度
+    baseSlug = baseSlug.substring(0, 25);
+    
+    console.log('🔧 生成slug - slug库处理结果:', baseSlug);
+    
+  } catch (error) {
+    console.warn('🚨 slug库处理失败，使用智能备用方案:', error);
+    
+    // 智能备用方案：扩展的中文转拼音映射
+    const pinyinMap = {
+      // 科技类
+      '技': 'ji', '术': 'shu', '人': 'ren', '工': 'gong', '智': 'zhi', '能': 'neng',
+      '数': 'shu', '据': 'ju', '分': 'fen', '析': 'xi', '系': 'xi', '统': 'tong',
+      '开': 'kai', '发': 'fa', '程': 'cheng', '序': 'xu', '网': 'wang', '站': 'zhan',
+      '应': 'ying', '用': 'yong', '软': 'ruan', '件': 'jian', '服': 'fu', '务': 'wu',
+      '前': 'qian', '端': 'duan', '后': 'hou', '库': 'ku', '框': 'kuang', '架': 'jia',
+      '算': 'suan', '法': 'fa', '机': 'ji', '器': 'qi', '学': 'xue', '习': 'xi',
+      '深': 'shen', '度': 'du', '神': 'shen', '经': 'jing', '络': 'luo',
+      '模': 'mo', '型': 'xing', '训': 'xun', '练': 'lian',
+      
+      // 常用字
+      '的': 'de', '是': 'shi', '在': 'zai', '有': 'you', '和': 'he', '与': 'yu',
+      '我': 'wo', '你': 'ni', '他': 'ta', '这': 'zhe', '那': 'na', '来': 'lai',
+      '去': 'qu', '上': 'shang', '下': 'xia', '大': 'da', '小': 'xiao', 
+      '新': 'xin', '老': 'lao', '好': 'hao', '中': 'zhong', '国': 'guo',
+      
+      // 动作词
+      '做': 'zuo', '说': 'shuo', '看': 'kan', '听': 'ting', '想': 'xiang',
+      '要': 'yao', '会': 'hui', '能': 'neng', '可': 'ke', '以': 'yi'
+    };
+    
+    baseSlug = title
+      .trim()
+      .substring(0, 60)
+      .toLowerCase()
+      // 转换中文字符为拼音
+      .replace(/[\u4e00-\u9fa5]/g, char => pinyinMap[char] || 'ch')
+      // 处理标点和特殊字符
+      .replace(/[，。！？；：""''（）【】《》、]/g, '-')
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .substring(0, 20);
+  }
   
-  let baseSlug = title
-    .trim()
-    .toLowerCase()
-    // 先处理常见的中文标点符号
-    .replace(/[，。！？；：""''（）【】《》、]/g, '-')
-    // 处理英文标点符号
-    .replace(/[.!?;:"'()\[\]{}<>]/g, '-')
-    // 转换中文字符为拼音
-    .replace(/[\u4e00-\u9fa5]/g, function(char) {
-      return chineseCharMap[char] || 'cn';
-    })
-    // 处理连续的分隔符
-    .replace(/[-\s_]+/g, '-')
-    // 移除非字母数字和连字符的字符
-    .replace(/[^a-z0-9-]/g, '')
-    // 移除开头和结尾的连字符
-    .replace(/^-+|-+$/g, '')
-    // 限制基础长度
-    .substring(0, 25);
-  
-  console.log('🔧 生成slug - 处理后的基础slug:', baseSlug);
-  
-  // 如果基础slug为空、太短或全是通用字符，使用有意义的默认值
-  if (!baseSlug || baseSlug.length < 3 || /^(cn|zh|de|le|shi|zai)+$/.test(baseSlug)) {
-    baseSlug = 'news-article';
+  // 如果基础slug为空或太短，使用默认值
+  if (!baseSlug || baseSlug.length < 3) {
+    baseSlug = 'article';
     console.log('🔧 生成slug - 使用默认前缀:', baseSlug);
   }
   
-  // 生成唯一后缀
+  // 生成唯一后缀确保不重复
   const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 5);
+  const randomSuffix = Math.random().toString(36).substring(2, 4);
   
   // 组合最终slug
-  const finalSlug = `${baseSlug}-${timestamp.toString().slice(-4)}${randomSuffix}`;
+  const finalSlug = `${baseSlug}-${timestamp.toString().slice(-6)}${randomSuffix}`;
   
   console.log('🔧 生成slug - 最终结果:', finalSlug);
   
-  return finalSlug.substring(0, 50); // 确保总长度合理
+  return finalSlug.substring(0, 45); // 确保总长度合理
 }
 
 // 验证和格式化文章数据

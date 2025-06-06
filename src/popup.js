@@ -55,6 +55,7 @@ function displayArticlePreview(article) {
     ${article.author ? `<p><strong>Author:</strong> ${article.author}</p>` : ''}
     ${article.publishTime ? `<p><strong>Publish Time:</strong> ${article.publishTime}</p>` : ''}
     ${article.digest ? `<p><strong>Digest:</strong> ${article.digest}</p>` : ''}
+    ${article.slug ? `<p><strong>Slug:</strong> <code style="background: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-size: 11px; font-family: monospace;">${article.slug}</code></p>` : ''}
     ${article.domain ? `<p><strong>Domain:</strong> ${article.domain}</p>` : ''}
     
     ${contentLength > 0 ? `
