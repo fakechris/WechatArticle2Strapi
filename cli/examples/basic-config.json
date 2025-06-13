@@ -1,0 +1,46 @@
+{
+  "strapiUrl": "https://your-strapi-instance.com",
+  "token": "your-api-token-here",
+  "collection": "articles",
+  "fieldMapping": {
+    "enabled": false,
+    "fields": {
+      "title": "title",
+      "content": "content",
+      "author": "author",
+      "publishTime": "publishTime",
+      "digest": "digest",
+      "sourceUrl": "sourceUrl",
+      "images": "images",
+      "slug": "slug",
+      "siteName": "siteName",
+      "language": "language",
+      "tags": "tags",
+      "readingTime": "readingTime",
+      "created": "extractedAt",
+      "headImg": "head_img"
+    }
+  },
+  "fieldPresets": {
+    "enabled": false,
+    "presets": {}
+  },
+  "advancedSettings": {
+    "maxContentLength": 50000,
+    "maxImages": 10,
+    "generateSlug": true,
+    "uploadImages": true,
+    "sanitizeContent": true,
+    "uploadHeadImg": false,
+    "headImgIndex": 0,
+    "enableImageCompression": true,
+    "imageQuality": 0.8,
+    "maxImageWidth": 1200,
+    "maxImageHeight": 800,
+    "smartImageReplace": true,
+    "retryFailedImages": true,
+    "enableCleanupRules": true
+  },
+  "enableCleanupRules": true,
+  "customCleanupRules": []
+}

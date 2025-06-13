@@ -7,6 +7,7 @@ import chalk from 'chalk';
 import MetadataExtractor from './metadata.js';
 import ImageProcessor from './images.js';
 import CleanupRules from './cleanup-rules.js';
+import StrapiIntegration from './strapi.js';
 
 class ArticleExtractor {
   constructor(options = {}) {
@@ -23,6 +24,13 @@ class ArticleExtractor {
     this.metadataExtractor = new MetadataExtractor();
     this.imageProcessor = new ImageProcessor(this.options);
     this.cleanupRules = new CleanupRules();
+    
+    // Initialize Strapi integration if config is provided
+    if (this.options.config && this.options.config.strapiUrl) {
+      this.strapiIntegration = new StrapiIntegration(this.options.config, {
+        verbose: this.options.verbose
+      });
+    }
   }
 
   async extract(urlOrPath) {
@@ -152,6 +160,18 @@ class ArticleExtractor {
       if (this.options.processImages && article.images && article.images.length > 0) {
         spinner.text = 'Processing images...';
         article = await this.imageProcessor.process(article, url);
+      }
+
+      // Process head image if Strapi integration is enabled and head image upload is configured
+      if (this.strapiIntegration && this.options.config.advancedSettings?.uploadHeadImg) {
+        spinner.text = 'Processing head image...';
+        article = await this.processHeadImage(article);
+      }
+
+      // Process and upload images to Strapi if enabled
+      if (this.strapiIntegration && this.options.config.advancedSettings?.uploadImages && article.images && article.images.length > 0) {
+        spinner.text = 'Uploading images to Strapi...';
+        article = await this.processArticleImages(article);
       }
 
       // Add extraction stats
@@ -566,41 +586,268 @@ class ArticleExtractor {
   }
 
   async sendToStrapi(article) {
-    if (!this.options.config || !this.options.config.strapi) {
-      throw new Error('Strapi configuration not found');
+    if (!this.strapiIntegration) {
+      throw new Error('Strapi integration not initialized. Please provide Strapi configuration.');
     }
 
-    const { strapiUrl, token, collection } = this.options.config.strapi;
-    
-    if (!strapiUrl || !token || !collection) {
-      throw new Error('Incomplete Strapi configuration');
-    }
+    return await this.strapiIntegration.sendToStrapi(article);
+  }
 
-    const endpoint = `${strapiUrl}/api/${collection}`;
-    
-    const data = {
-      title: article.title,
-      content: article.content,
-      author: article.author,
-      publishTime: article.publishTime,
-      digest: article.digest,
-      sourceUrl: article.url,
-      slug: article.slug,
-      siteName: article.siteName,
-      language: article.language,
-      tags: article.tags ? JSON.stringify(article.tags) : null,
-      readingTime: article.readingTime,
-      extractedAt: new Date().toISOString()
-    };
-
-    const response = await axios.post(endpoint, { data }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+  // Process head image for Strapi upload
+  async processHeadImage(article) {
+    if (!article.images || article.images.length === 0) {
+      if (this.options.verbose) {
+        console.log(chalk.yellow('⚠️ No images found for head image processing'));
       }
-    });
+      return article;
+    }
 
-    return response.data;
+    const headImgIndex = this.options.config.advancedSettings?.headImgIndex || 0;
+    const targetImage = article.images[headImgIndex];
+
+    if (!targetImage) {
+      if (this.options.verbose) {
+        console.log(chalk.yellow(`⚠️ No image found at index ${headImgIndex} for head image`));
+      }
+      return article;
+    }
+
+    try {
+      if (this.options.verbose) {
+        console.log(chalk.blue(`🖼️ Processing head image from index ${headImgIndex}: ${targetImage.src.substring(0, 60)}...`));
+      }
+
+      // Download and process the image
+      const imageBuffer = await this.downloadImage(targetImage.src);
+      const filename = this.generateHeadImageFilename(article.title, targetImage.src);
+
+      // Upload to Strapi
+      const uploadResult = await this.strapiIntegration.uploadImageToStrapi(
+        imageBuffer, 
+        filename, 
+        {
+          mimeType: this.getMimeTypeFromUrl(targetImage.src),
+          isHeadImage: true,
+          alt: targetImage.alt || `Head image for ${article.title}`,
+          caption: `Head image for article: ${article.title}`
+        }
+      );
+
+      if (uploadResult && uploadResult[0]) {
+        const uploadedFile = uploadResult[0];
+        
+        if (this.options.verbose) {
+          console.log(chalk.green(`✅ Head image uploaded: ${uploadedFile.name} (ID: ${uploadedFile.id})`));
+        }
+
+        return {
+          ...article,
+          headImageId: uploadedFile.id,
+          headImageUrl: uploadedFile.url,
+          headImageInfo: {
+            id: uploadedFile.id,
+            url: uploadedFile.url,
+            filename: uploadedFile.name,
+            originalIndex: headImgIndex,
+            originalUrl: targetImage.src
+          }
+        };
+      }
+
+      return article;
+
+    } catch (error) {
+      if (this.options.verbose) {
+        console.error(chalk.red(`❌ Head image processing failed: ${error.message}`));
+      }
+      
+      // Don't fail the entire process for head image errors
+      return {
+        ...article,
+        headImageError: error.message
+      };
+    }
+  }
+
+  // Process and upload article images to Strapi
+  async processArticleImages(article) {
+    if (!article.images || article.images.length === 0) {
+      return article;
+    }
+
+    const maxImages = this.options.config.advancedSettings?.maxImages || 10;
+    const imagesToProcess = article.images.slice(0, maxImages);
+    const processedImages = [];
+
+    if (this.options.verbose) {
+      console.log(chalk.blue(`📷 Processing ${imagesToProcess.length} images for Strapi upload...`));
+    }
+
+    for (let i = 0; i < imagesToProcess.length; i++) {
+      const image = imagesToProcess[i];
+      
+      try {
+        if (this.options.verbose) {
+          console.log(chalk.blue(`📤 Processing image ${i + 1}/${imagesToProcess.length}: ${image.src.substring(0, 60)}...`));
+        }
+
+        // Download and process the image
+        const imageBuffer = await this.downloadImage(image.src);
+        const filename = this.generateImageFilename(image.src, i);
+
+        // Upload to Strapi
+        const uploadResult = await this.strapiIntegration.uploadImageToStrapi(
+          imageBuffer, 
+          filename, 
+          {
+            mimeType: this.getMimeTypeFromUrl(image.src),
+            alt: image.alt || `Image ${i + 1}`,
+            caption: `Image from article: ${article.title}`
+          }
+        );
+
+        if (uploadResult && uploadResult[0]) {
+          const uploadedFile = uploadResult[0];
+          
+          processedImages.push({
+            original: image.src,
+            uploaded: uploadedFile.url,
+            id: uploadedFile.id,
+            filename: uploadedFile.name,
+            index: i,
+            alt: image.alt
+          });
+
+          if (this.options.verbose) {
+            console.log(chalk.green(`✅ Image ${i + 1} uploaded: ${uploadedFile.name}`));
+          }
+        }
+
+      } catch (error) {
+        if (this.options.verbose) {
+          console.error(chalk.red(`❌ Image ${i + 1} upload failed: ${error.message}`));
+        }
+        
+        // Continue with other images even if one fails
+        processedImages.push({
+          original: image.src,
+          error: error.message,
+          index: i
+        });
+      }
+    }
+
+    // Update content with new image URLs if smart replacement is enabled
+    let updatedContent = article.content;
+    if (this.options.config.advancedSettings?.smartImageReplace) {
+      for (const processedImage of processedImages) {
+        if (processedImage.uploaded) {
+          updatedContent = this.replaceImageInContent(updatedContent, processedImage.original, processedImage.uploaded);
+        }
+      }
+    }
+
+    return {
+      ...article,
+      content: updatedContent,
+      processedImages: processedImages,
+      imageProcessingStats: {
+        total: imagesToProcess.length,
+        successful: processedImages.filter(img => img.uploaded).length,
+        failed: processedImages.filter(img => img.error).length
+      }
+    };
+  }
+
+  // Download image from URL and return buffer
+  async downloadImage(imageUrl) {
+    try {
+      const response = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        headers: {
+          'User-Agent': this.options.userAgent,
+          'Accept': 'image/*,*/*;q=0.8'
+        }
+      });
+
+      return Buffer.from(response.data);
+
+    } catch (error) {
+      throw new Error(`Failed to download image from ${imageUrl}: ${error.message}`);
+    }
+  }
+
+  // Generate filename for head image
+  generateHeadImageFilename(articleTitle, imageUrl) {
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substr(2, 6);
+    
+    let baseName = 'head-img';
+    
+    if (articleTitle) {
+      const titleSlug = articleTitle
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .substring(0, 20);
+      
+      if (titleSlug.length > 3) {
+        baseName = `head-img-${titleSlug}`;
+      }
+    }
+    
+    const extension = this.getExtensionFromUrl(imageUrl) || 'jpg';
+    return `${baseName}-${timestamp}-${randomId}.${extension}`;
+  }
+
+  // Generate filename for regular images
+  generateImageFilename(imageUrl, index) {
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substr(2, 8);
+    const extension = this.getExtensionFromUrl(imageUrl) || 'jpg';
+    
+    return `article-image-${index + 1}-${timestamp}-${randomId}.${extension}`;
+  }
+
+  // Get file extension from URL
+  getExtensionFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      const extension = pathname.split('.').pop()?.toLowerCase();
+      
+      const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+      return validExtensions.includes(extension) ? extension : 'jpg';
+    } catch {
+      return 'jpg';
+    }
+  }
+
+  // Get MIME type from URL
+  getMimeTypeFromUrl(url) {
+    const extension = this.getExtensionFromUrl(url);
+    const mimeTypes = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp'
+    };
+    return mimeTypes[extension] || 'image/jpeg';
+  }
+
+  // Replace image URLs in content
+  replaceImageInContent(content, originalUrl, newUrl) {
+    if (!content || !originalUrl || !newUrl) {
+      return content;
+    }
+
+    // Create regex to match the original URL
+    const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedUrl, 'g');
+    
+    return content.replace(regex, newUrl);
   }
 
   logExtractionSummary(article) {

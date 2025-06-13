@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
+import ConfigConverter from './config-converter.js';
 
 class ConfigManager {
   constructor(configPath = null) {
@@ -27,44 +28,86 @@ class ConfigManager {
   }
 
   getDefaultConfig() {
+    // EXACT Chrome extension format for full compatibility
     return {
-      // Strapi configuration
-      strapi: {
-        strapiUrl: '',
-        token: '',
-        collection: 'articles'
-      },
+      // Basic Strapi configuration (flat structure like Chrome extension)
+      strapiUrl: '',
+      token: '',
+      collection: 'articles',
 
-      // Extraction settings
-      extraction: {
-        timeout: 30000,
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        maxContentLength: 50000,
-        generateSlug: true
-      },
-
-      // Image processing settings
-      images: {
+      // Field mapping configuration (matches Chrome extension exactly)
+      fieldMapping: {
         enabled: false,
-        outputDir: './images',
+        fields: {
+          title: 'title',
+          content: 'content',
+          author: 'author',
+          publishTime: 'publishTime',
+          digest: 'digest',
+          sourceUrl: 'sourceUrl',
+          images: 'images',
+          slug: 'slug',
+          // Enhanced metadata fields
+          siteName: 'siteName',
+          language: 'language',
+          tags: 'tags',
+          readingTime: 'readingTime',
+          created: 'extractedAt',
+          // Head image field
+          headImg: 'head_img'
+        }
+      },
+
+      // Field presets configuration (matches Chrome extension exactly)
+      fieldPresets: {
+        enabled: false,
+        presets: {
+          // Example: category: { value: 'extracted-articles', type: 'text' }
+        }
+      },
+
+      // Advanced settings (matches Chrome extension exactly)
+      advancedSettings: {
+        maxContentLength: 50000,
         maxImages: 10,
+        generateSlug: true,
+        uploadImages: true,
+        sanitizeContent: true,
+        includeBlocksField: false,
+        putContentInBlocks: false,
+        blocksComponentName: 'blocks.rich-text',
+        // Image processing settings
+        enableImageCompression: true,
         imageQuality: 0.8,
-        maxWidth: 1200,
-        maxHeight: 800,
-        downloadTimeout: 30000
+        maxImageWidth: 1200,
+        maxImageHeight: 800,
+        smartImageReplace: true,
+        retryFailedImages: true,
+        // Head image settings
+        uploadHeadImg: false,
+        headImgIndex: 0
       },
 
-      // Output settings
-      output: {
-        defaultFormat: 'json',
-        verbose: false,
-        colorize: true
-      },
+      // Cleanup rules (matches Chrome extension exactly)
+      enableCleanupRules: true,
+      customCleanupRules: [],
 
-      // Custom cleanup rules
-      cleanup: {
-        enabled: true,
-        customRules: []
+      // CLI-specific settings (not in Chrome extension)
+      _cliSettings: {
+        extraction: {
+          timeout: 30000,
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        images: {
+          enabled: false,
+          outputDir: './images',
+          downloadTimeout: 30000
+        },
+        output: {
+          defaultFormat: 'json',
+          verbose: false,
+          colorize: true
+        }
       }
     };
   }
@@ -160,51 +203,49 @@ class ConfigManager {
   validate() {
     const errors = [];
 
-    // Validate Strapi config if enabled
-    if (this.config.strapi) {
-      if (!this.config.strapi.strapiUrl) {
-        errors.push('Strapi URL is required');
-      } else {
-        try {
-          new URL(this.config.strapi.strapiUrl);
-        } catch {
-          errors.push('Invalid Strapi URL format');
-        }
-      }
-
-      if (!this.config.strapi.token) {
-        errors.push('Strapi API token is required');
-      }
-
-      if (!this.config.strapi.collection) {
-        errors.push('Strapi collection name is required');
+    // Validate Strapi config (flat structure like Chrome extension)
+    if (!this.config.strapiUrl) {
+      errors.push('Strapi URL is required');
+    } else {
+      try {
+        new URL(this.config.strapiUrl);
+      } catch {
+        errors.push('Invalid Strapi URL format');
       }
     }
 
-    // Validate extraction settings
-    if (this.config.extraction) {
-      if (this.config.extraction.timeout && 
-          (typeof this.config.extraction.timeout !== 'number' || this.config.extraction.timeout <= 0)) {
+    if (!this.config.token) {
+      errors.push('Strapi API token is required');
+    }
+
+    if (!this.config.collection) {
+      errors.push('Strapi collection name is required');
+    }
+
+    // Validate CLI-specific settings
+    if (this.config._cliSettings?.extraction) {
+      if (this.config._cliSettings.extraction.timeout && 
+          (typeof this.config._cliSettings.extraction.timeout !== 'number' || this.config._cliSettings.extraction.timeout <= 0)) {
         errors.push('Extraction timeout must be a positive number');
       }
-
-      if (this.config.extraction.maxContentLength && 
-          (typeof this.config.extraction.maxContentLength !== 'number' || this.config.extraction.maxContentLength <= 0)) {
-        errors.push('Max content length must be a positive number');
-      }
     }
 
-    // Validate image settings
-    if (this.config.images) {
-      if (this.config.images.maxImages && 
-          (typeof this.config.images.maxImages !== 'number' || this.config.images.maxImages <= 0)) {
+    // Validate advanced settings (from Chrome extension)
+    if (this.config.advancedSettings) {
+      if (this.config.advancedSettings.maxImages && 
+          (typeof this.config.advancedSettings.maxImages !== 'number' || this.config.advancedSettings.maxImages <= 0)) {
         errors.push('Max images must be a positive number');
       }
 
-      if (this.config.images.imageQuality && 
-          (typeof this.config.images.imageQuality !== 'number' || 
-           this.config.images.imageQuality <= 0 || this.config.images.imageQuality > 1)) {
+      if (this.config.advancedSettings.imageQuality && 
+          (typeof this.config.advancedSettings.imageQuality !== 'number' || 
+           this.config.advancedSettings.imageQuality <= 0 || this.config.advancedSettings.imageQuality > 1)) {
         errors.push('Image quality must be between 0 and 1');
+      }
+
+      if (this.config.advancedSettings.maxContentLength && 
+          (typeof this.config.advancedSettings.maxContentLength !== 'number' || this.config.advancedSettings.maxContentLength <= 0)) {
+        errors.push('Max content length must be a positive number');
       }
     }
 
@@ -241,13 +282,13 @@ class ConfigManager {
   // Environment variable overrides
   loadFromEnv() {
     const envMappings = {
-      'STRAPI_URL': 'strapi.strapiUrl',
-      'STRAPI_TOKEN': 'strapi.token',
-      'STRAPI_COLLECTION': 'strapi.collection',
-      'EXTRACTION_TIMEOUT': 'extraction.timeout',
-      'MAX_IMAGES': 'images.maxImages',
-      'IMAGE_QUALITY': 'images.imageQuality',
-      'OUTPUT_DIR': 'images.outputDir'
+      'STRAPI_URL': 'strapiUrl',
+      'STRAPI_TOKEN': 'token',
+      'STRAPI_COLLECTION': 'collection',
+      'EXTRACTION_TIMEOUT': '_cliSettings.extraction.timeout',
+      'MAX_IMAGES': 'advancedSettings.maxImages',
+      'IMAGE_QUALITY': 'advancedSettings.imageQuality',
+      'OUTPUT_DIR': '_cliSettings.images.outputDir'
     };
 
     Object.entries(envMappings).forEach(([envVar, configPath]) => {
@@ -274,22 +315,87 @@ class ConfigManager {
       configPath: this.configPath,
       configExists: fs.existsSync(this.configPath),
       strapi: {
-        configured: !!(this.config.strapi?.strapiUrl && this.config.strapi?.token),
-        url: this.config.strapi?.strapiUrl || 'Not set',
-        collection: this.config.strapi?.collection || 'Not set'
+        configured: !!(this.config.strapiUrl && this.config.token),
+        url: this.config.strapiUrl || 'Not set',
+        collection: this.config.collection || 'Not set'
       },
       images: {
-        enabled: this.config.images?.enabled || false,
-        outputDir: this.config.images?.outputDir || './images',
-        maxImages: this.config.images?.maxImages || 10
+        enabled: this.config._cliSettings?.images?.enabled || false,
+        outputDir: this.config._cliSettings?.images?.outputDir || './images',
+        maxImages: this.config.advancedSettings?.maxImages || 10
       },
       extraction: {
-        timeout: this.config.extraction?.timeout || 30000,
-        generateSlug: this.config.extraction?.generateSlug !== false
+        timeout: this.config._cliSettings?.extraction?.timeout || 30000,
+        generateSlug: this.config.advancedSettings?.generateSlug !== false
+      },
+      fieldMapping: {
+        enabled: this.config.fieldMapping?.enabled || false,
+        fieldsCount: Object.keys(this.config.fieldMapping?.fields || {}).length
+      },
+      fieldPresets: {
+        enabled: this.config.fieldPresets?.enabled || false,
+        presetsCount: Object.keys(this.config.fieldPresets?.presets || {}).length
       }
     };
 
     return summary;
+  }
+
+  // Load from Chrome extension backup file
+  async loadFromChromeBackup(backupPath) {
+    try {
+      const backupContent = await fs.readFile(backupPath, 'utf8');
+      const backupData = JSON.parse(backupContent);
+      
+      // Extract and convert Chrome extension settings
+      const chromeSettings = ConfigConverter.extractChromeSettings(backupData);
+      const cliConfig = ConfigConverter.chromeBackupToCliConfig(chromeSettings);
+      
+      // Validate compatibility
+      const validation = ConfigConverter.validateCompatibility(cliConfig);
+      if (!validation.valid) {
+        throw new Error(`Invalid Chrome backup: ${validation.errors.join(', ')}`);
+      }
+      
+      // Apply migrated configuration
+      this.config = this.deepMerge(this.getDefaultConfig(), cliConfig);
+      
+      return {
+        success: true,
+        warnings: validation.warnings,
+        timestamp: backupData.timestamp || 'Unknown'
+      };
+      
+    } catch (error) {
+      throw new Error(`Failed to load Chrome backup from ${backupPath}: ${error.message}`);
+    }
+  }
+
+  // Export current config as Chrome extension backup
+  async exportAsChromeBackup(outputPath) {
+    try {
+      const backup = ConfigConverter.createChromeBackup(this.config, {
+        exportedBy: 'Article Extractor CLI',
+        exportedAt: new Date().toISOString()
+      });
+      
+      await fs.writeFile(outputPath, JSON.stringify(backup, null, 2), 'utf8');
+      
+      return {
+        success: true,
+        path: outputPath,
+        timestamp: backup.timestamp
+      };
+      
+    } catch (error) {
+      throw new Error(`Failed to export Chrome backup to ${outputPath}: ${error.message}`);
+    }
+  }
+
+  // Check if configuration is compatible with Chrome extension
+  isCompatibleWithChrome() {
+    const validation = ConfigConverter.validateCompatibility(this.config);
+    return validation;
   }
 }
 

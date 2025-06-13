@@ -1,0 +1,65 @@
+{
+  "strapiUrl": "https://your-strapi-instance.com",
+  "token": "your-api-token-here",
+  "collection": "articles",
+  "fieldMapping": {
+    "enabled": true,
+    "fields": {
+      "title": "title",
+      "content": "content",
+      "author": "author",
+      "publishTime": "publish_date",
+      "digest": "description",
+      "sourceUrl": "source_url",
+      "images": "image_gallery",
+      "slug": "slug",
+      "siteName": "site_name",
+      "language": "language",
+      "tags": "tags",
+      "readingTime": "reading_time",
+      "created": "extracted_at",
+      "headImg": "cover_image"
+    }
+  },
+  "fieldPresets": {
+    "enabled": true,
+    "presets": {
+      "category": {
+        "value": "WeChat Articles",
+        "type": "text"
+      },
+      "source_type": {
+        "value": "wechat_mp",
+        "type": "text"
+      },
+      "status": {
+        "value": "published",
+        "type": "text"
+      }
+    }
+  },
+  "advancedSettings": {
+    "maxContentLength": 100000,
+    "maxImages": 20,
+    "generateSlug": true,
+    "uploadImages": true,
+    "sanitizeContent": true,
+    "uploadHeadImg": true,
+    "headImgIndex": 0,
+    "enableImageCompression": true,
+    "imageQuality": 0.85,
+    "maxImageWidth": 1200,
+    "maxImageHeight": 800,
+    "smartImageReplace": true,
+    "retryFailedImages": true,
+    "enableCleanupRules": true
+  },
+  "enableCleanupRules": true,
+  "customCleanupRules": [],
+  "_cliSettings": {
+    "extraction": {
+      "timeout": 30000,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+  }
+}
