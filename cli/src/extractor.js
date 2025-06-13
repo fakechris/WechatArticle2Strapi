@@ -234,87 +234,178 @@ class ArticleExtractor {
       console.log(chalk.blue('\n📱 Using WeChat-specific extraction'));
     }
 
-    try {
-      // Try Defuddle first for better content filtering
+    // Try WeChat-specific selectors first for better accuracy
+    const wechatResult = this.extractWithWeChatSelectors(document, url);
+    
+    // If WeChat selectors got good content, use it
+    if (wechatResult.content && wechatResult.content.length > 500) {
       if (this.options.verbose) {
-        console.log('Creating Defuddle instance...');
+        console.log(chalk.green('✨ Using WeChat selectors - found substantial content'));
+      }
+      return wechatResult;
+    }
+
+    // Fallback to Defuddle if WeChat selectors didn't work well
+    try {
+      if (this.options.verbose) {
+        console.log('WeChat selectors insufficient, trying Defuddle...');
       }
       
       const defuddle = new Defuddle(document, {
         debug: this.options.verbose,
         removeExactSelectors: true,
-        removePartialSelectors: true
+        removePartialSelectors: true,
+        // WeChat-specific options
+        contentSelector: '#js_content, .rich_media_content, .rich_media_area_primary',
+        titleSelector: '#activity-name, .rich_media_title, h1',
+        authorSelector: '#js_name, .rich_media_meta_text'
       });
 
-      if (this.options.verbose) {
-        console.log('Calling Defuddle parse...');
-      }
-      
       const defuddleResult = defuddle.parse();
 
       if (defuddleResult && defuddleResult.content && defuddleResult.content.length > 100) {
         if (this.options.verbose) {
           console.log(chalk.green('✨ Using Defuddle result for WeChat'));
+          console.log(`Content length: ${defuddleResult.content.length} chars`);
         }
         return this.enhanceWithWeChatMetadata(defuddleResult, document, url);
       } else {
         if (this.options.verbose) {
-          console.log(chalk.yellow('⚠️ Defuddle result insufficient, using WeChat selectors'));
+          console.log(chalk.yellow('⚠️ Defuddle result insufficient'));
+          if (defuddleResult) {
+            console.log(`Defuddle content length: ${defuddleResult.content ? defuddleResult.content.length : 'null'}`);
+          }
         }
       }
     } catch (error) {
       if (this.options.verbose) {
         console.log(chalk.yellow(`⚠️ Defuddle failed: ${error.message}`));
-        console.log('Defuddle error details:', error);
       }
     }
 
-    // Fallback to WeChat-specific selectors
-    return this.extractWithWeChatSelectors(document, url);
+    // Return WeChat selectors result as final fallback
+    if (this.options.verbose) {
+      console.log(chalk.blue('Using WeChat selectors as fallback'));
+    }
+    return wechatResult;
   }
 
   extractWithWeChatSelectors(document, url) {
+    // WeChat title extraction - try multiple selectors
     const titleEl = document.querySelector('#activity-name') || 
                     document.querySelector('.rich_media_title') ||
+                    document.querySelector('h1[data-role="title"]') ||
                     document.querySelector('h1');
 
-    const authorEl = document.querySelector('#js_name') ||
-                     document.querySelector('.rich_media_meta_text') ||
-                     document.querySelector('.account_nickname_inner');
+    // WeChat author extraction - get account name, not individual author
+    const accountEl = document.querySelector('#js_name');
+    const authorMetaEl = document.querySelector('.rich_media_meta_text');
+    
+    // Extract author info more precisely
+    let author = '';
+    if (accountEl) {
+      author = accountEl.textContent?.trim() || '';
+    }
+    
+    // If no account name, try to get from meta text (usually the first one is author)
+    if (!author && authorMetaEl) {
+      const metaTexts = document.querySelectorAll('.rich_media_meta_text');
+      if (metaTexts.length > 0) {
+        author = metaTexts[0].textContent?.trim() || '';
+      }
+    }
 
+    // WeChat publish time - more specific selector
     const publishTimeEl = document.querySelector('#publish_time') ||
-                          document.querySelector('.rich_media_meta_text');
+                          document.querySelector('em.rich_media_meta_text') ||
+                          document.querySelector('.rich_media_meta_text[id*="time"]');
 
+    // WeChat content extraction - try multiple content containers
     const contentEl = document.querySelector('#js_content') ||
-                      document.querySelector('.rich_media_content');
+                      document.querySelector('.rich_media_content') ||
+                      document.querySelector('#page-content .rich_media_content') ||
+                      document.querySelector('[data-role="content"]');
 
-    const digestEl = document.querySelector('.rich_media_meta_text') ||
-                     document.querySelector('meta[name="description"]');
-
-    // Extract images
-    const images = [];
+    // If no main content found, try to extract from script tag (some WeChat articles load content via JS)
+    let extractedContent = '';
     if (contentEl) {
-      const imgElements = contentEl.querySelectorAll('img[data-src], img[src]');
+      extractedContent = contentEl.innerHTML;
+    } else {
+      // Try to find content in script tags
+      const scripts = document.querySelectorAll('script');
+      for (const script of scripts) {
+        const scriptText = script.textContent || '';
+        if (scriptText.includes('msg_content') || scriptText.includes('content_info')) {
+          // Try to extract content from JavaScript
+          const contentMatch = scriptText.match(/content['"]\s*:\s*['"]([^'"]+)['"]/);
+          if (contentMatch) {
+            extractedContent = contentMatch[1];
+            break;
+          }
+        }
+      }
+    }
+
+    // WeChat digest/description
+    const digestEl = document.querySelector('meta[name="description"]') ||
+                     document.querySelector('meta[property="og:description"]') ||
+                     document.querySelector('.rich_media_meta_text');
+
+    // Extract images from content or entire document
+    const images = [];
+    const imgContainers = [
+      contentEl,
+      document.querySelector('#page-content'),
+      document.querySelector('.rich_media_area_primary'),
+      document
+    ].filter(Boolean);
+
+    for (const container of imgContainers) {
+      const imgElements = container.querySelectorAll('img[data-src], img[src]');
       
       imgElements.forEach((img, index) => {
         const src = img.getAttribute('data-src') || img.src;
         if (this.isValidImageUrl(src)) {
-          images.push({
-            src: src,
-            alt: img.alt || '',
-            index: index
-          });
+          // Avoid duplicates
+          if (!images.find(existingImg => existingImg.src === src)) {
+            images.push({
+              src: src,
+              alt: img.alt || '',
+              index: images.length
+            });
+          }
         }
       });
+      
+      // If we found images, stop looking in other containers
+      if (images.length > 0) break;
     }
 
     const title = titleEl ? titleEl.textContent.trim() : '';
+    const publishTime = publishTimeEl ? publishTimeEl.textContent.trim() : '';
     
+    // Clean up extracted content or use fallback
+    let finalContent = extractedContent || '';
+    if (!finalContent && contentEl) {
+      finalContent = contentEl.innerHTML;
+    }
+    
+    // If still no content, try to get text from the main article area
+    if (!finalContent || finalContent.length < 100) {
+      const mainArea = document.querySelector('.rich_media_area_primary') ||
+                       document.querySelector('#page-content') ||
+                       document.querySelector('.rich_media');
+      if (mainArea) {
+        // Get text content but preserve some structure
+        finalContent = mainArea.innerHTML;
+      }
+    }
+
     return {
       title: title,
-      author: authorEl ? authorEl.textContent.trim() : '',
-      publishTime: publishTimeEl ? publishTimeEl.textContent.trim() : '',
-      content: contentEl ? contentEl.innerHTML : '',
+      author: author,
+      publishTime: publishTime,
+      content: finalContent,
       digest: digestEl ? (digestEl.content || digestEl.textContent || '').trim() : '',
       images: images,
       url: url,
@@ -618,7 +709,7 @@ class ArticleExtractor {
       }
 
       // Download and process the image
-      const imageBuffer = await this.downloadImage(targetImage.src);
+      const imageBuffer = await this.downloadImage(targetImage.src, article.url);
       const filename = this.generateHeadImageFilename(article.title, targetImage.src);
 
       // Upload to Strapi
@@ -760,20 +851,68 @@ class ArticleExtractor {
   }
 
   // Download image from URL and return buffer
-  async downloadImage(imageUrl) {
+  async downloadImage(imageUrl, sourceUrl = null) {
     try {
+      // Special handling for WeChat images
+      const isWeChatImage = imageUrl.includes('mmbiz.qpic.cn') || imageUrl.includes('weixin');
+      
+      // Use mobile User-Agent for better compatibility with WeChat CDN
+      const mobileUserAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+      
+      const headers = {
+        'User-Agent': isWeChatImage ? mobileUserAgent : this.options.userAgent,
+        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-US;q=0.7',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Fetch-Dest': 'image',
+        'Sec-Fetch-Mode': 'no-cors',
+        'Sec-Fetch-Site': 'cross-site'
+      };
+
+      // Add WeChat-specific headers with proper Referer
+      if (isWeChatImage) {
+        // Use the actual article URL as Referer if available
+        headers['Referer'] = sourceUrl || 'https://mp.weixin.qq.com/';
+        headers['Origin'] = 'https://mp.weixin.qq.com';
+        headers['Accept-Encoding'] = 'gzip, deflate, br';
+        headers['Connection'] = 'keep-alive';
+        // WeChat-specific headers
+        headers['Sec-Ch-Ua'] = '"Safari";v="16", "WebKit";v="605"';
+        headers['Sec-Ch-Ua-Mobile'] = '?1';
+        headers['Sec-Ch-Ua-Platform'] = '"iOS"';
+        headers['Upgrade-Insecure-Requests'] = '1';
+      }
+
+      if (this.options.verbose) {
+        console.log(chalk.blue(`📥 Downloading image: ${imageUrl.substring(0, 60)}...`));
+        if (isWeChatImage) {
+          console.log(chalk.gray('  Using WeChat-specific headers'));
+        }
+      }
+
       const response = await axios.get(imageUrl, {
         responseType: 'arraybuffer',
         timeout: 30000,
-        headers: {
-          'User-Agent': this.options.userAgent,
-          'Accept': 'image/*,*/*;q=0.8'
-        }
+        headers: headers,
+        maxRedirects: 3,
+        validateStatus: (status) => status < 400
       });
+
+      if (this.options.verbose) {
+        console.log(chalk.green(`✅ Image downloaded: ${Math.round(response.data.length / 1024)}KB`));
+      }
 
       return Buffer.from(response.data);
 
     } catch (error) {
+      if (this.options.verbose) {
+        console.log(chalk.red(`❌ Image download failed: ${error.message}`));
+        if (error.response) {
+          console.log(chalk.gray(`  Status: ${error.response.status}`));
+          console.log(chalk.gray(`  Headers: ${JSON.stringify(error.response.headers)}`));
+        }
+      }
       throw new Error(`Failed to download image from ${imageUrl}: ${error.message}`);
     }
   }
