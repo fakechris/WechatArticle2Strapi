@@ -1,0 +1,38 @@
+{
+  "strapi": {
+    "strapiUrl": "https://your-strapi-instance.com",
+    "token": "your-api-token-here",
+    "collection": "articles"
+  },
+  "extraction": {
+    "timeout": 30000,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "maxContentLength": 50000,
+    "generateSlug": true
+  },
+  "images": {
+    "enabled": false,
+    "outputDir": "./images",
+    "maxImages": 10,
+    "imageQuality": 0.8,
+    "maxWidth": 1200,
+    "maxHeight": 800,
+    "downloadTimeout": 30000
+  },
+  "output": {
+    "defaultFormat": "json",
+    "verbose": false,
+    "colorize": true
+  },
+  "cleanup": {
+    "enabled": true,
+    "customRules": [
+      {
+        "type": "class",
+        "value": "custom-ad-class",
+        "description": "Custom advertisement class",
+        "domains": ["example.com"]
+      }
+    ]
+  }
+}

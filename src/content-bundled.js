@@ -4,6 +4,61 @@ import Defuddle from 'defuddle';
 console.log('Defuddle imported:', typeof Defuddle);
 console.log('Defuddle class:', Defuddle);
 
+// 生成预览用的简化slug
+function generatePreviewSlug(title) {
+  if (!title || typeof title !== 'string') return '';
+  
+  console.log('🔧 生成预览slug - 标题:', title);
+  
+  // 简化的中文转拼音映射
+  const pinyinMap = {
+    // 常用科技词汇
+    '技': 'ji', '术': 'shu', '人': 'ren', '工': 'gong', '智': 'zhi', '能': 'neng',
+    '数': 'shu', '据': 'ju', '分': 'fen', '析': 'xi', '系': 'xi', '统': 'tong',
+    '开': 'kai', '发': 'fa', '程': 'cheng', '序': 'xu', '网': 'wang', '站': 'zhan',
+    '应': 'ying', '用': 'yong', '软': 'ruan', '件': 'jian', '服': 'fu', '务': 'wu',
+    '前': 'qian', '端': 'duan', '后': 'hou', '库': 'ku', '框': 'kuang', '架': 'jia',
+    '算': 'suan', '法': 'fa', '机': 'ji', '器': 'qi', '学': 'xue', '习': 'xi',
+    '深': 'shen', '度': 'du', '神': 'shen', '经': 'jing', '络': 'luo',
+    '模': 'mo', '型': 'xing', '训': 'xun', '练': 'lian',
+    
+    // 常用字
+    '大': 'da', '小': 'xiao', '新': 'xin', '老': 'lao', '好': 'hao', 
+    '中': 'zhong', '国': 'guo', '的': 'de', '是': 'shi', '在': 'zai',
+    '有': 'you', '和': 'he', '与': 'yu', '来': 'lai', '去': 'qu',
+    '上': 'shang', '下': 'xia', '会': 'hui', '可': 'ke', '以': 'yi',
+    '要': 'yao', '说': 'shuo', '看': 'kan', '做': 'zuo', '想': 'xiang',
+    
+    // 故障相关
+    '故': 'gu', '障': 'zhang', '问': 'wen', '题': 'ti', '解': 'jie', '决': 'jue',
+    '修': 'xiu', '复': 'fu', '错': 'cuo', '误': 'wu', '失': 'shi', '败': 'bai',
+    
+    // 云服务相关
+    '云': 'yun', '服': 'fu', '务': 'wu', '阿': 'a', '里': 'li', '域': 'yu',
+    '名': 'ming', '核': 'he', '心': 'xin', '被': 'bei', '拖': 'tuo', '走': 'zou'
+  };
+  
+  const slug = title
+    .trim()
+    .substring(0, 50) // 限制长度
+    .toLowerCase()
+    // 转换中文字符为拼音
+    .replace(/[\u4e00-\u9fa5]/g, char => pinyinMap[char] || 'ch')
+    // 处理标点和特殊字符
+    .replace(/[，。！？；：""''（）【】《》、]/g, '-')
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 30);
+  
+  // 添加短时间戳确保唯一性
+  const timestamp = Date.now().toString().slice(-4);
+  const finalSlug = slug ? `${slug}-${timestamp}` : `article-${timestamp}`;
+  
+  console.log('🔧 生成预览slug - 结果:', finalSlug);
+  return finalSlug;
+}
+
 // 🛡️ 其他Extension清理器
 function cleanupOtherExtensions() {
   let removedCount = 0;
@@ -374,14 +429,18 @@ function extractWeChatArticle() {
     });
   }
 
+  const articleTitle = titleEl ? titleEl.innerText.trim() : '';
+  const articleSlug = articleTitle ? generatePreviewSlug(articleTitle) : '';
+  
   return {
-    title: titleEl ? titleEl.innerText.trim() : '',
+    title: articleTitle,
     author: authorEl ? authorEl.innerText.trim() : '',
     publishTime: publishTimeEl ? publishTimeEl.innerText.trim() : '',
     content: contentEl ? contentEl.innerHTML : '',
     digest: digestEl ? (digestEl.content || digestEl.innerText || '').trim() : '',
     images: images,
     url: window.location.href,
+    slug: articleSlug,
     timestamp: Date.now(),
     extractionMethod: 'wechat-fallback'
   };
@@ -435,14 +494,18 @@ function enhanceWithWeChatMetadata(defuddleResult) {
   
   console.log(`📊 图片去重完成，最终收集到 ${images.length} 个唯一图片`);
 
+  const articleTitle = defuddleResult.title || '';
+  const articleSlug = articleTitle ? generatePreviewSlug(articleTitle) : '';
+  
   return {
-    title: defuddleResult.title || '',
+    title: articleTitle,
     author: defuddleResult.author || (authorEl ? authorEl.innerText.trim() : ''),
     publishTime: defuddleResult.published || (publishTimeEl ? publishTimeEl.innerText.trim() : ''),
     content: defuddleResult.content || '',
     digest: defuddleResult.description || (digestEl ? (digestEl.content || digestEl.innerText || '').trim() : ''),
     images: images,
     url: defuddleResult.url || window.location.href,
+    slug: articleSlug,
     timestamp: Date.now(),
     extractionMethod: 'defuddle-enhanced-wechat',
     wordCount: defuddleResult.wordCount || 0,
@@ -516,14 +579,18 @@ function extractGeneralContent() {
     
     console.log(`📊 通用内容图片去重完成，最终收集到 ${images.length} 个唯一图片`);
     
+    const articleTitle = result.title || document.title || '';
+    const articleSlug = articleTitle ? generatePreviewSlug(articleTitle) : '';
+    
     const finalResult = {
-      title: result.title || document.title || '',
+      title: articleTitle,
       author: result.author || '',
       publishTime: result.published || '',
       content: result.content || '',
       digest: result.description || '',
       images: images,
       url: result.url || window.location.href,
+      slug: articleSlug,
       timestamp: Date.now(),
       extractionMethod: 'defuddle',
       wordCount: result.wordCount || 0,
@@ -632,6 +699,8 @@ function extractBasicContent() {
                    document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
                    '';
   
+  const articleSlug = title ? generatePreviewSlug(title) : '';
+  
   const basicResult = {
     title: title,
     author: '',
@@ -640,6 +709,7 @@ function extractBasicContent() {
     digest: metaDesc,
     images: images,
     url: window.location.href,
+    slug: articleSlug,
     timestamp: Date.now(),
     extractionMethod: 'basic-fallback'
   };
