@@ -75,20 +75,33 @@ class ArticleExtractor {
         url = `file://${url}`; // Convert to file URL for JSDOM
       } else {
         // Fetch webpage
-        const response = await axios.get(url, {
+        const axiosConfig = {
           timeout: this.options.timeout,
           headers: {
             'User-Agent': this.options.userAgent,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'close'
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
           },
           maxRedirects: 5,
-          validateStatus: (status) => status < 500, // Accept 4xx responses
+          validateStatus: (status) => status < 500,
           decompress: true,
           responseType: 'text'
-        });
+        };
+
+        // Special handling for WeChat URLs
+        if (url.includes('mp.weixin.qq.com')) {
+          axiosConfig.headers['Referer'] = 'https://mp.weixin.qq.com/';
+          // Don't set Host header manually - let axios handle it
+        }
+
+        if (this.options.verbose) {
+          console.log('Making HTTP request with config:', JSON.stringify(axiosConfig, null, 2));
+        }
+
+        const response = await axios.get(url, axiosConfig);
         htmlContent = response.data;
       }
 
@@ -100,7 +113,8 @@ class ArticleExtractor {
         referrer: url,
         contentType: 'text/html',
         includeNodeLocations: false,
-        pretendToBeVisual: true
+        pretendToBeVisual: true,
+        resources: 'usable'
       });
 
       const document = dom.window.document;
@@ -159,7 +173,39 @@ class ArticleExtractor {
 
     } catch (error) {
       spinner.fail('Extraction failed');
-      throw error;
+      
+      // Provide user-friendly error messages
+      let userMessage = error.message;
+      
+      if (error.message.includes('Client network socket disconnected')) {
+        userMessage = 'Network connection failed. This may be due to:\n' +
+                     '  • Network connectivity issues\n' +
+                     '  • Website blocking automated requests\n' +
+                     '  • Firewall or proxy restrictions\n' +
+                     '  • TLS/SSL configuration problems\n\n' +
+                     'Try again later or use a different network.';
+      } else if (error.message.includes('protocol mismatch')) {
+        userMessage = 'HTTP protocol configuration error. This is usually a temporary issue.\n' +
+                     'Please try again in a moment.';
+      } else if (error.message.includes('timeout')) {
+        userMessage = 'Request timed out. The website may be slow or unresponsive.';
+      } else if (error.message.includes('ENOTFOUND')) {
+        userMessage = 'Domain not found. Please check the URL is correct.';
+      } else if (error.message.includes('ECONNREFUSED')) {
+        userMessage = 'Connection refused. The server may be down or blocking requests.';
+      }
+      
+      if (this.options.verbose) {
+        console.error('\n🔍 Debug info:');
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+      
+      // Throw a more user-friendly error
+      const friendlyError = new Error(userMessage);
+      friendlyError.originalError = error;
+      throw friendlyError;
     }
   }
 
@@ -170,12 +216,20 @@ class ArticleExtractor {
 
     try {
       // Try Defuddle first for better content filtering
+      if (this.options.verbose) {
+        console.log('Creating Defuddle instance...');
+      }
+      
       const defuddle = new Defuddle(document, {
         debug: this.options.verbose,
         removeExactSelectors: true,
         removePartialSelectors: true
       });
 
+      if (this.options.verbose) {
+        console.log('Calling Defuddle parse...');
+      }
+      
       const defuddleResult = defuddle.parse();
 
       if (defuddleResult && defuddleResult.content && defuddleResult.content.length > 100) {
@@ -191,6 +245,7 @@ class ArticleExtractor {
     } catch (error) {
       if (this.options.verbose) {
         console.log(chalk.yellow(`⚠️ Defuddle failed: ${error.message}`));
+        console.log('Defuddle error details:', error);
       }
     }
 
