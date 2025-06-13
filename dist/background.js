@@ -939,9 +939,9 @@ function generateSlug(title) {
   } catch (error) {
     console.warn('🚨 slug库处理失败，使用智能备用方案:', error);
     
-    // 智能备用方案：扩展的中文转拼音映射
+    // 智能备用方案：扩展的中文转拼音映射（与content-bundled.js保持一致）
     const pinyinMap = {
-      // 科技类
+      // 常用科技词汇
       '技': 'ji', '术': 'shu', '人': 'ren', '工': 'gong', '智': 'zhi', '能': 'neng',
       '数': 'shu', '据': 'ju', '分': 'fen', '析': 'xi', '系': 'xi', '统': 'tong',
       '开': 'kai', '发': 'fa', '程': 'cheng', '序': 'xu', '网': 'wang', '站': 'zhan',
@@ -952,19 +952,24 @@ function generateSlug(title) {
       '模': 'mo', '型': 'xing', '训': 'xun', '练': 'lian',
       
       // 常用字
-      '的': 'de', '是': 'shi', '在': 'zai', '有': 'you', '和': 'he', '与': 'yu',
-      '我': 'wo', '你': 'ni', '他': 'ta', '这': 'zhe', '那': 'na', '来': 'lai',
-      '去': 'qu', '上': 'shang', '下': 'xia', '大': 'da', '小': 'xiao', 
-      '新': 'xin', '老': 'lao', '好': 'hao', '中': 'zhong', '国': 'guo',
+      '大': 'da', '小': 'xiao', '新': 'xin', '老': 'lao', '好': 'hao', 
+      '中': 'zhong', '国': 'guo', '的': 'de', '是': 'shi', '在': 'zai',
+      '有': 'you', '和': 'he', '与': 'yu', '来': 'lai', '去': 'qu',
+      '上': 'shang', '下': 'xia', '会': 'hui', '可': 'ke', '以': 'yi',
+      '要': 'yao', '说': 'shuo', '看': 'kan', '做': 'zuo', '想': 'xiang',
       
-      // 动作词
-      '做': 'zuo', '说': 'shuo', '看': 'kan', '听': 'ting', '想': 'xiang',
-      '要': 'yao', '会': 'hui', '能': 'neng', '可': 'ke', '以': 'yi'
+      // 故障相关
+      '故': 'gu', '障': 'zhang', '问': 'wen', '题': 'ti', '解': 'jie', '决': 'jue',
+      '修': 'xiu', '复': 'fu', '错': 'cuo', '误': 'wu', '失': 'shi', '败': 'bai',
+      
+      // 云服务相关
+      '云': 'yun', '服': 'fu', '务': 'wu', '阿': 'a', '里': 'li', '域': 'yu',
+      '名': 'ming', '核': 'he', '心': 'xin', '被': 'bei', '拖': 'tuo', '走': 'zou'
     };
     
-    baseSlug = title
+    const slug = title
       .trim()
-      .substring(0, 60)
+      .substring(0, 50) // 限制长度（与content-bundled.js一致）
       .toLowerCase()
       // 转换中文字符为拼音
       .replace(/[\u4e00-\u9fa5]/g, char => pinyinMap[char] || 'ch')
@@ -973,25 +978,15 @@ function generateSlug(title) {
       .replace(/[^a-z0-9-]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '')
-      .substring(0, 20);
+      .substring(0, 30); // 与content-bundled.js一致
+    
+    // 添加短时间戳确保唯一性（与content-bundled.js保持一致）
+    const timestamp = Date.now().toString().slice(-4);
+    baseSlug = slug ? `${slug}-${timestamp}` : `article-${timestamp}`;
   }
   
-  // 如果基础slug为空或太短，使用默认值
-  if (!baseSlug || baseSlug.length < 3) {
-    baseSlug = 'article';
-    console.log('🔧 生成slug - 使用默认前缀:', baseSlug);
-  }
-  
-  // 生成唯一后缀确保不重复
-  const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 4);
-  
-  // 组合最终slug
-  const finalSlug = `${baseSlug}-${timestamp.toString().slice(-6)}${randomSuffix}`;
-  
-  console.log('🔧 生成slug - 最终结果:', finalSlug);
-  
-  return finalSlug.substring(0, 45); // 确保总长度合理
+  console.log('🔧 生成slug - 最终结果:', baseSlug);
+  return baseSlug;
 }
 
 // 验证和格式化文章数据
@@ -1111,7 +1106,10 @@ function validateArticleData(article, fieldMapping, advancedSettings, fieldPrese
   
     // Slug字段 - 如果启用自动生成且映射了有效字段名
   if (advancedSettings.generateSlug && fieldMap.slug && fieldMap.slug.trim()) {
-    data[fieldMap.slug] = generateSlug(article.title);
+    // 优先使用article对象中已生成的slug，如果没有则生成新的
+    const slugValue = article.slug || generateSlug(article.title);
+    data[fieldMap.slug] = slugValue;
+    console.log('🔧 使用slug值:', slugValue, article.slug ? '(来自article)' : '(新生成)');
   }
 
   // Enhanced metadata fields - 新增字段处理
