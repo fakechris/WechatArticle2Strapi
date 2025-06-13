@@ -35,46 +35,15 @@
 /******/ 	}
 /******/ 	
 /************************************************************************/
-/******/ 	/* webpack/runtime/compat get default export */
-/******/ 	(() => {
-/******/ 		// getDefaultExport function for compatibility with non-harmony modules
-/******/ 		__webpack_require__.n = (module) => {
-/******/ 			var getter = module && module.__esModule ?
-/******/ 				() => (module['default']) :
-/******/ 				() => (module);
-/******/ 			__webpack_require__.d(getter, { a: getter });
-/******/ 			return getter;
-/******/ 		};
-/******/ 	})();
-/******/ 	
-/******/ 	/* webpack/runtime/define property getters */
-/******/ 	(() => {
-/******/ 		// define getter functions for harmony exports
-/******/ 		__webpack_require__.d = (exports, definition) => {
-/******/ 			for(var key in definition) {
-/******/ 				if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
-/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
-/******/ 				}
-/******/ 			}
-/******/ 		};
-/******/ 	})();
-/******/ 	
-/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
-/******/ 	(() => {
-/******/ 		__webpack_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
-/******/ 	})();
-/******/ 	
-/************************************************************************/
 // This entry needs to be wrapped in an IIFE because it needs to be in strict mode.
 (() => {
 "use strict";
 /* harmony import */ var defuddle__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(609);
-/* harmony import */ var defuddle__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(defuddle__WEBPACK_IMPORTED_MODULE_0__);
 
 
 // Add debug information to verify Defuddle is loaded
-console.log('Defuddle imported:', typeof (defuddle__WEBPACK_IMPORTED_MODULE_0___default()));
-console.log('Defuddle class:', (defuddle__WEBPACK_IMPORTED_MODULE_0___default()));
+console.log('Defuddle imported:', typeof defuddle__WEBPACK_IMPORTED_MODULE_0__);
+console.log('Defuddle class:', defuddle__WEBPACK_IMPORTED_MODULE_0__);
 
 // 生成预览用的简化slug
 function generatePreviewSlug(title) {
@@ -440,10 +409,10 @@ function extractWeChatArticle() {
   try {
     // Try Defuddle first even for WeChat articles to get better content filtering
     console.log('Trying Defuddle for WeChat article...');
-    const defuddle = new (defuddle__WEBPACK_IMPORTED_MODULE_0___default())(document, {
+    const defuddle = new defuddle__WEBPACK_IMPORTED_MODULE_0__(document, {
       debug: true, // Enable debug for troubleshooting
-      removeExactSelectors: true,
-      removePartialSelectors: true
+      removeExactSelectors: false,  // 降低清理强度，避免误删正文
+      removePartialSelectors: false // 降低清理强度
     });
     
     const result = defuddle.parse();
@@ -590,14 +559,14 @@ function enhanceWithWeChatMetadata(defuddleResult) {
 function extractGeneralContent() {
   // Use Defuddle for general web content extraction
   console.log('Extracting general content with Defuddle');
-  console.log('Defuddle constructor available:', typeof (defuddle__WEBPACK_IMPORTED_MODULE_0___default()));
+  console.log('Defuddle constructor available:', typeof defuddle__WEBPACK_IMPORTED_MODULE_0__);
   
   try {
     console.log('Creating Defuddle instance...');
-    const defuddle = new (defuddle__WEBPACK_IMPORTED_MODULE_0___default())(document, {
+    const defuddle = new defuddle__WEBPACK_IMPORTED_MODULE_0__(document, {
       debug: true, // Enable debug for troubleshooting
-      removeExactSelectors: true,
-      removePartialSelectors: true
+      removeExactSelectors: false,  // 降低清理强度，避免误删正文
+      removePartialSelectors: false // 降低清理强度
     });
     
     console.log('Defuddle instance created, calling parse...');
@@ -1243,7 +1212,7 @@ function isValidImageUrl(url) {
 
 console.log('Enhanced Smart Article Extractor content script loaded with Defuddle support');
 console.log('Current domain:', window.location.hostname);
-console.log('Defuddle available at load:', typeof (defuddle__WEBPACK_IMPORTED_MODULE_0___default()));
+console.log('Defuddle available at load:', typeof defuddle__WEBPACK_IMPORTED_MODULE_0__);
 
 // 🛡️ 启动Extension清理器以阻止其他Extension注入
 startExtensionCleanupWatcher(); 

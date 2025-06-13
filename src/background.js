@@ -606,6 +606,49 @@ async function sendToStrapi(article) {
     console.log('Status Text:', response.statusText);
     console.log('Headers:', Object.fromEntries(response.headers.entries()));
     
+    // 🔥 新增：专门针对401错误的详细调试
+    if (response.status === 401) {
+      console.error('🚨 401 Unauthorized Error Debug Information:');
+      console.error('Request URL:', endpoint);
+      console.error('Token (first 20 chars):', config.token.substring(0, 20) + '...');
+      console.error('Token length:', config.token.length);
+      console.error('Authorization header:', `Bearer ${config.token.substring(0, 20)}...`);
+      console.error('Strapi URL:', config.strapiUrl);
+      console.error('Collection:', config.collection);
+      
+      // 测试token格式
+      const tokenIsJWT = config.token.includes('.');
+      console.error('Token appears to be JWT:', tokenIsJWT);
+      
+      if (tokenIsJWT) {
+        try {
+          const parts = config.token.split('.');
+          console.error('JWT parts count:', parts.length);
+          if (parts.length >= 2) {
+            const payload = JSON.parse(atob(parts[1]));
+            console.error('JWT payload:', payload);
+            if (payload.exp) {
+              const expDate = new Date(payload.exp * 1000);
+              const now = new Date();
+              console.error('JWT expires at:', expDate.toISOString());
+              console.error('Current time:', now.toISOString());
+              console.error('Token expired:', now > expDate);
+            }
+          }
+        } catch (jwtError) {
+          console.error('JWT parsing error:', jwtError.message);
+        }
+      }
+      
+      // 尝试获取详细的错误信息
+      try {
+        const errorText = await response.clone().text();
+        console.error('401 Error response body:', errorText);
+      } catch (readError) {
+        console.error('Cannot read 401 error response:', readError.message);
+      }
+    }
+    
     if (!response.ok) {
       // 先读取响应文本，避免多次读取body stream
       const responseText = await response.text();

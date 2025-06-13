@@ -1,4 +1,5 @@
 /******/ (() => { // webpackBootstrap
+/******/ 	"use strict";
 function updateStatus(message, isError = false) {
   const statusEl = document.getElementById('status');
   statusEl.textContent = message;
@@ -385,6 +386,102 @@ document.getElementById('options').addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
 });
 
+// 🔥 新增：调试Strapi配置状态
+function debugStrapiConfig() {
+  chrome.storage.sync.get(['strapiUrl', 'token', 'collection', 'fieldMapping', 'advancedSettings'], (data) => {
+    console.log('🔍 Strapi配置调试信息:');
+    console.log('Strapi URL:', data.strapiUrl || '未配置');
+    console.log('Collection:', data.collection || '未配置');
+    console.log('Token存在:', !!data.token);
+    console.log('Token长度:', data.token ? data.token.length : 0);
+    console.log('Token前缀:', data.token ? data.token.substring(0, 20) + '...' : '无');
+    
+    // 检查Token格式
+    if (data.token) {
+      const isJWT = data.token.includes('.');
+      console.log('Token格式:', isJWT ? 'JWT' : 'Simple Token');
+      
+      if (isJWT) {
+        try {
+          const parts = data.token.split('.');
+          console.log('JWT部分数量:', parts.length);
+          if (parts.length >= 2) {
+            const payload = JSON.parse(atob(parts[1]));
+            console.log('JWT载荷:', payload);
+            if (payload.exp) {
+              const expDate = new Date(payload.exp * 1000);
+              const now = new Date();
+              console.log('JWT过期时间:', expDate.toISOString());
+              console.log('当前时间:', now.toISOString());
+              console.log('Token是否过期:', now > expDate);
+            }
+          }
+        } catch (jwtError) {
+          console.error('JWT解析错误:', jwtError.message);
+        }
+      }
+    }
+    
+    console.log('字段映射配置:', data.fieldMapping ? '已配置' : '未配置');
+    console.log('高级设置:', data.advancedSettings ? '已配置' : '未配置');
+    
+    // 测试API连接
+    if (data.strapiUrl && data.token && data.collection) {
+      console.log('正在测试API连接...');
+      testStrapiConnection(data);
+    } else {
+      console.warn('⚠️ 配置不完整，无法测试连接');
+    }
+  });
+}
+
+// 🔥 新增：测试Strapi连接
+async function testStrapiConnection(config) {
+  try {
+    const testUrl = `${config.strapiUrl}/api/${config.collection}`;
+    console.log('测试URL:', testUrl);
+    
+    const response = await fetch(testUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log('API测试结果:');
+    console.log('状态码:', response.status);
+    console.log('状态文本:', response.statusText);
+    console.log('响应头:', Object.fromEntries(response.headers.entries()));
+    
+    if (response.status === 401) {
+      console.error('🚨 401错误 - 认证失败！');
+      console.error('可能的原因:');
+      console.error('1. Token无效或过期');
+      console.error('2. Token权限不足');
+      console.error('3. Strapi URL错误');
+      console.error('4. Collection名称错误');
+      
+      try {
+        const errorText = await response.text();
+        console.error('错误详情:', errorText);
+      } catch (e) {
+        console.error('无法读取错误详情');
+      }
+    } else if (response.ok) {
+      console.log('✅ API连接测试成功');
+      const data = await response.json();
+      console.log('返回数据:', data);
+    } else {
+      console.error('❌ API连接测试失败');
+      const errorText = await response.text();
+      console.error('错误信息:', errorText);
+    }
+  } catch (error) {
+    console.error('🔥 连接测试异常:', error);
+  }
+}
+
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
   // 检查配置状态
@@ -393,6 +490,10 @@ document.addEventListener('DOMContentLoaded', () => {
       updateStatus('Please configure Strapi settings first', true);
       document.getElementById('config-warning').style.display = 'block';
     }
+    
+    // 🔥 自动运行调试
+    console.log('🔧 运行Strapi配置调试...');
+    debugStrapiConfig();
   });
   
   // 使用事件委托来处理动态生成的按钮点击
