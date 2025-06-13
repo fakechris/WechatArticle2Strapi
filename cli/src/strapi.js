@@ -272,6 +272,12 @@ class StrapiIntegration {
     if (!strapiUrl || !token) {
       throw new Error('Strapi configuration incomplete');
     }
+
+    // Validate and clean token
+    const cleanToken = token.trim();
+    if (!cleanToken) {
+      throw new Error('Token is empty or contains only whitespace');
+    }
     
     try {
       // Use form-data package for Node.js compatibility
@@ -296,11 +302,12 @@ class StrapiIntegration {
       
       if (this.options.verbose) {
         console.log(chalk.blue(`📤 Uploading image: ${filename} (${Math.round(imageBuffer.length / 1024)}KB)`));
+        console.log('  Token:', `${cleanToken.substring(0, 10)}...`);
       }
       
       const response = await axios.post(`${strapiUrl}/api/upload`, formData, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${cleanToken}`,
           ...formData.getHeaders() // Get proper headers from form-data
         },
         timeout: 60000 // 60 second timeout for uploads
@@ -328,16 +335,72 @@ class StrapiIntegration {
       throw new Error('Strapi configuration incomplete. Please check strapiUrl, token, and collection.');
     }
 
+    // Validate and clean token
+    const cleanToken = token.trim();
+    if (!cleanToken) {
+      throw new Error('Token is empty or contains only whitespace');
+    }
+
     try {
       // Validate and format article data
       const articleData = this.validateArticleData(article);
       
-      const endpoint = `${strapiUrl}/api/${collection}`;
+      let endpoint = `${strapiUrl}/api/${collection}`;
+      
+      // Test API accessibility (similar to Chrome extension)
+      if (this.options.verbose) {
+        console.log(chalk.blue('🔍 Testing API accessibility...'));
+      }
+      
+      try {
+        const testResponse = await axios.get(endpoint, {
+          headers: {
+            'Authorization': `Bearer ${cleanToken}`
+          },
+          timeout: 10000
+        });
+        
+        if (this.options.verbose) {
+          console.log(chalk.green(`✅ API test successful: ${testResponse.status}`));
+        }
+      } catch (testError) {
+        if (testError.response?.status === 404) {
+          // Try alternative endpoint without /api prefix
+          const altEndpoint = `${strapiUrl}/${collection}`;
+          if (this.options.verbose) {
+            console.log(chalk.yellow(`⚠️ /api endpoint failed (404), trying alternative: ${altEndpoint}`));
+          }
+          
+          try {
+            const altTestResponse = await axios.get(altEndpoint, {
+              headers: {
+                'Authorization': `Bearer ${cleanToken}`
+              },
+              timeout: 10000
+            });
+            
+            if (altTestResponse.status < 400) {
+              endpoint = altEndpoint;
+              if (this.options.verbose) {
+                console.log(chalk.green(`✅ Using alternative endpoint: ${endpoint}`));
+              }
+            }
+          } catch (altError) {
+            if (this.options.verbose) {
+              console.log(chalk.yellow('⚠️ Alternative endpoint also failed, continuing with original'));
+            }
+          }
+        } else if (this.options.verbose) {
+          console.log(chalk.yellow(`⚠️ API test failed: ${testError.message}`));
+        }
+      }
       
       if (this.options.verbose) {
         console.log(chalk.blue('📤 Sending article to Strapi:'));
+        console.log('  Token:', `${cleanToken.substring(0, 10)}...`);
         console.log('  Endpoint:', endpoint);
         console.log('  Fields:', Object.keys(articleData));
+        console.log('  Data size:', JSON.stringify(articleData).length, 'characters');
       }
       
       const requestBody = { data: articleData };
@@ -345,7 +408,7 @@ class StrapiIntegration {
       const response = await axios.post(endpoint, requestBody, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${cleanToken}`
         },
         timeout: 60000
       });

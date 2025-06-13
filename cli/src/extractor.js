@@ -253,10 +253,10 @@ class ArticleExtractor {
       
       const defuddle = new Defuddle(document, {
         debug: this.options.verbose,
-        removeExactSelectors: true,
-        removePartialSelectors: true,
+        removeExactSelectors: false,  // 降低清理强度，避免误删正文
+        removePartialSelectors: false, // 降低清理强度
         // WeChat-specific options
-        contentSelector: '#js_content, .rich_media_content, .rich_media_area_primary',
+        contentSelector: '#js_content, .rich_media_content, .rich_media_area_primary, .weui-article, .weui-msg',
         titleSelector: '#activity-name, .rich_media_title, h1',
         authorSelector: '#js_name, .rich_media_meta_text'
       });
@@ -473,8 +473,8 @@ class ArticleExtractor {
     try {
       const defuddle = new Defuddle(document, {
         debug: this.options.verbose,
-        removeExactSelectors: true,
-        removePartialSelectors: true
+        removeExactSelectors: false,  // 降低清理强度，避免误删正文
+        removePartialSelectors: false // 降低清理强度
       });
 
       const result = defuddle.parse();
@@ -783,7 +783,7 @@ class ArticleExtractor {
         }
 
         // Download and process the image
-        const imageBuffer = await this.downloadImage(image.src);
+        const imageBuffer = await this.downloadImage(image.src, article.url);
         const filename = this.generateImageFilename(image.src, i);
 
         // Upload to Strapi

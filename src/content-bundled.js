@@ -370,8 +370,8 @@ function extractWeChatArticle() {
     console.log('Trying Defuddle for WeChat article...');
     const defuddle = new Defuddle(document, {
       debug: true, // Enable debug for troubleshooting
-      removeExactSelectors: true,
-      removePartialSelectors: true
+      removeExactSelectors: false,  // 降低清理强度，避免误删正文
+      removePartialSelectors: false // 降低清理强度
     });
     
     const result = defuddle.parse();
@@ -524,8 +524,8 @@ function extractGeneralContent() {
     console.log('Creating Defuddle instance...');
     const defuddle = new Defuddle(document, {
       debug: true, // Enable debug for troubleshooting
-      removeExactSelectors: true,
-      removePartialSelectors: true
+      removeExactSelectors: false,  // 降低清理强度，避免误删正文
+      removePartialSelectors: false // 降低清理强度
     });
     
     console.log('Defuddle instance created, calling parse...');
