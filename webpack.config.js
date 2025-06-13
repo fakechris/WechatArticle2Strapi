@@ -15,7 +15,11 @@ export default {
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: '[name].js',
-    clean: true
+    clean: true,
+    // 🔧 修复：为Chrome extension设置固定的publicPath
+    publicPath: '',
+    // 🔧 修复：确保所有资源使用相对路径
+    chunkFilename: '[name].js'
   },
   resolve: {
     fallback: {
@@ -80,6 +84,12 @@ export default {
     })
   ],
   optimization: {
-    minimize: false // Keep readable for debugging
-  }
+    minimize: false, // Keep readable for debugging
+    // 🔧 修复：完全禁用代码分割，确保每个入口文件独立，避免消息监听器冲突
+    splitChunks: false
+  },
+  // 🔧 修复：Chrome extension特定的目标配置
+  target: 'web',
+  // 🔧 修复：避免使用eval，Chrome extension中不允许
+  devtool: false
 }; 

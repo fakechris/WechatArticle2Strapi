@@ -62,8 +62,10 @@ function displayArticlePreview(article) {
       <div style="margin: 10px 0;">
         <div style="background: white; border: 1px solid #e1e5e9; border-radius: 4px; padding: 10px; margin: 8px 0;">
           <div style="font-weight: bold; font-size: 12px; color: #495057; margin-bottom: 6px;">📖 Content Preview</div>
-          <div style="font-size: 12px; line-height: 1.4; color: #6c757d;">
-            ${getContentSummary(article.content)}
+          <div style="font-size: 12px; line-height: 1.6; color: #333; max-height: 300px; overflow-y: auto;">
+            <div class="content-preview-summary">
+              ${getContentSummary(article.content)}
+            </div>
           </div>
         </div>
         <button class="content-toggle" id="content-toggle-btn">
@@ -73,7 +75,18 @@ function displayArticlePreview(article) {
       
       <div id="content-preview-area" style="display: none;">
         <div class="content-preview">
-          <div id="preview-content-container">
+          <div id="preview-content-container" style="
+            background: white; 
+            border: 1px solid #e1e5e9; 
+            border-radius: 4px; 
+            padding: 15px; 
+            margin: 10px 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-height: 500px;
+            overflow-y: auto;
+          ">
             ${sanitizedData.content}
           </div>
           ${sanitizedData.isTruncated ? `
@@ -165,43 +178,55 @@ function showFullContent() {
   }
 }
 
-// 获取内容摘要
+// 获取内容摘要（保留HTML格式）
 function getContentSummary(content) {
   if (!content) return 'No content available';
   
-  // 移除HTML标签，获取纯文本
+  // 创建临时div来处理HTML
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = content;
   
-  // 移除脚本和样式
+  // 移除脚本和样式标签
   const scripts = tempDiv.querySelectorAll('script, style, noscript');
   scripts.forEach(el => el.remove());
   
-  const textContent = tempDiv.textContent || tempDiv.innerText || '';
+  // 获取带格式的HTML内容
+  let htmlContent = tempDiv.innerHTML;
   
-  // 获取前200个字符作为摘要
-  let summary = textContent.trim().substring(0, 200);
-  
-  // 如果内容被截断，添加省略号
-  if (textContent.length > 200) {
-    // 尝试在句号、问号或感叹号处截断
-    const lastSentenceEnd = Math.max(
-      summary.lastIndexOf('。'),
-      summary.lastIndexOf('！'),
-      summary.lastIndexOf('？'),
-      summary.lastIndexOf('.'),
-      summary.lastIndexOf('!'),
-      summary.lastIndexOf('?')
-    );
+  // 如果内容太长，智能截断（尝试在完整标签处截断）
+  if (htmlContent.length > 800) {
+    const truncated = htmlContent.substring(0, 800);
     
-    if (lastSentenceEnd > 100) {
-      summary = summary.substring(0, lastSentenceEnd + 1);
+    // 尝试在最后一个完整的HTML标签处截断
+    const lastCompleteTag = truncated.lastIndexOf('</');
+    if (lastCompleteTag > 400) {
+      // 找到对应的标签结束位置
+      const tagEnd = truncated.indexOf('>', lastCompleteTag);
+      if (tagEnd !== -1) {
+        htmlContent = truncated.substring(0, tagEnd + 1) + '...';
+      } else {
+        htmlContent = truncated + '...';
+      }
     } else {
-      summary += '...';
+      // 如果找不到完整标签，在句号、问号或感叹号处截断
+      const lastSentenceEnd = Math.max(
+        truncated.lastIndexOf('。'),
+        truncated.lastIndexOf('！'),
+        truncated.lastIndexOf('？'),
+        truncated.lastIndexOf('.'),
+        truncated.lastIndexOf('!'),
+        truncated.lastIndexOf('?')
+      );
+      
+      if (lastSentenceEnd > 400) {
+        htmlContent = truncated.substring(0, lastSentenceEnd + 1) + '...';
+      } else {
+        htmlContent = truncated + '...';
+      }
     }
   }
   
-  return summary || 'No readable content found';
+  return htmlContent || 'No readable content found';
 }
 
 // 净化内容用于预览显示
@@ -261,36 +286,65 @@ function getExtractionBadge(method) {
   return badges[method] || '<span style="background: #757575; color: white; padding: 2px 6px; border-radius: 3px; font-size: 12px;">❓ Unknown</span>';
 }
 
-// 预览功能
+// 预览功能 - 使用和Extract相同的完整提取逻辑
 document.getElementById('preview').addEventListener('click', () => {
+  console.log('=== Preview按钮点击 ===');
   updateStatus('Extracting article...');
   setLoading(true);
   
   chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
     const currentTab = tabs[0];
+    console.log('当前标签页:', {
+      url: currentTab.url,
+      title: currentTab.title,
+      id: currentTab.id
+    });
     
     // Check if it's a readable web page
     if (currentTab.url.startsWith('chrome://') || currentTab.url.startsWith('chrome-extension://') || currentTab.url.startsWith('moz-extension://')) {
+      console.warn('❌ 无法从浏览器内部页面提取内容');
       updateStatus('Cannot extract content from browser internal pages', true);
       setLoading(false);
       return;
     }
     
-    chrome.tabs.sendMessage(currentTab.id, { type: 'extract' }, article => {
+    console.log('📤 发送Preview请求到background script（使用完整提取逻辑）');
+    // 使用和Extract相同的完整逻辑，但是不上传到Strapi
+    chrome.runtime.sendMessage({ 
+      type: 'previewArticle',  // 新的消息类型
+      tabId: currentTab.id 
+    }, response => {
       setLoading(false);
       
+      console.log('📨 Preview响应接收:', {
+        hasError: !!chrome.runtime.lastError,
+        errorMessage: chrome.runtime.lastError?.message,
+        hasResponse: !!response,
+        success: response?.success
+      });
+      
       if (chrome.runtime.lastError) {
+        console.error('Background script通信错误:', chrome.runtime.lastError);
         updateStatus('Failed to extract article: ' + chrome.runtime.lastError.message, true);
         return;
       }
       
-      if (!article || !article.title) {
-        updateStatus('No article content found. Please try a different web page.', true);
+      if (!response || !response.success || !response.data) {
+        console.warn('❌ 没有找到文章内容');
+        const errorMsg = response?.error || 'No article content found';
+        updateStatus('Failed to extract: ' + errorMsg, true);
         return;
       }
       
+      const article = response.data;
+      console.log('✅ Preview提取成功:', {
+        title: article.title,
+        contentLength: article.content?.length || 0,
+        method: article.extractionMethod
+      });
+      
       displayArticlePreview(article);
-      updateStatus('Article extracted successfully!');
+      updateStatus('Article extracted successfully! (Preview mode - not uploaded)');
       
       // 存储文章数据以备发送
       window.currentArticle = article;
@@ -384,24 +438,31 @@ document.getElementById('options').addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
 });
 
-// 🔥 新增：调试Strapi配置状态
-function debugStrapiConfig() {
-  chrome.storage.sync.get(['strapiUrl', 'token', 'collection', 'fieldMapping', 'advancedSettings'], (data) => {
-    console.log('🔍 Strapi配置调试信息:');
-    console.log('Strapi URL:', data.strapiUrl || '未配置');
-    console.log('Collection:', data.collection || '未配置');
-    console.log('Token存在:', !!data.token);
-    console.log('Token长度:', data.token ? data.token.length : 0);
-    console.log('Token前缀:', data.token ? data.token.substring(0, 20) + '...' : '无');
+// 🔥 新增：调试Strapi配置状态（使用统一配置读取）
+async function debugStrapiConfig() {
+  try {
+    // 使用和background script相同的统一配置读取逻辑
+    const config = await loadUnifiedConfig();
+    
+    console.log('🔍 统一Strapi配置调试信息:');
+    console.log('Strapi URL:', config.strapiUrl || '未配置');
+    console.log('Collection:', config.collection || '未配置');
+    console.log('Token存在:', !!config.token);
+    console.log('Token长度:', config.token ? config.token.length : 0);
+    console.log('Token前缀:', config.token ? config.token.substring(0, 20) + '...' : '无');
+    console.log('字段映射启用:', config.fieldMapping?.enabled || false);
+    console.log('字段映射字段数量:', Object.keys(config.fieldMapping?.fields || {}).length);
+    console.log('高级设置存在:', !!config.advancedSettings);
+    console.log('配置环境:', 'chrome-extension');
     
     // 检查Token格式
-    if (data.token) {
-      const isJWT = data.token.includes('.');
+    if (config.token) {
+      const isJWT = config.token.includes('.');
       console.log('Token格式:', isJWT ? 'JWT' : 'Simple Token');
       
       if (isJWT) {
         try {
-          const parts = data.token.split('.');
+          const parts = config.token.split('.');
           console.log('JWT部分数量:', parts.length);
           if (parts.length >= 2) {
             const payload = JSON.parse(atob(parts[1]));
@@ -420,17 +481,172 @@ function debugStrapiConfig() {
       }
     }
     
-    console.log('字段映射配置:', data.fieldMapping ? '已配置' : '未配置');
-    console.log('高级设置:', data.advancedSettings ? '已配置' : '未配置');
+    // 验证配置
+    const validation = validateUnifiedConfig(config);
+    console.log('配置验证结果:', {
+      valid: validation.valid,
+      errors: validation.errors
+    });
     
     // 测试API连接
-    if (data.strapiUrl && data.token && data.collection) {
+    if (validation.valid) {
       console.log('正在测试API连接...');
-      testStrapiConnection(data);
+      testStrapiConnection(config);
     } else {
-      console.warn('⚠️ 配置不完整，无法测试连接');
+      console.warn('⚠️ 配置无效，无法测试连接:', validation.errors);
     }
+    
+  } catch (error) {
+    console.error('❌ 配置调试失败:', error);
+  }
+}
+
+// 统一的配置读取逻辑（与background.js一致）
+async function loadUnifiedConfig() {
+  return new Promise((resolve, reject) => {
+    const configKeys = [
+      'strapiUrl', 'token', 'collection', 
+      'fieldMapping', 'fieldPresets', 'advancedSettings',
+      'enableCleanupRules', 'customCleanupRules'
+    ];
+
+    chrome.storage.sync.get(configKeys, (data) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      // 标准化配置，确保包含所有默认值（与CLI一致）
+      const normalizedConfig = normalizeUnifiedConfig(data);
+      resolve(normalizedConfig);
+    });
   });
+}
+
+// 标准化配置对象（与background.js一致）
+function normalizeUnifiedConfig(userConfig = {}) {
+  const defaultConfig = getUnifiedDefaultConfig();
+  return deepMergeUnifiedConfig(defaultConfig, userConfig);
+}
+
+// 获取默认配置（与background.js一致）
+function getUnifiedDefaultConfig() {
+  return {
+    strapiUrl: '',
+    token: '',
+    collection: 'articles',
+    fieldMapping: {
+      enabled: false,
+      fields: {
+        title: 'title',
+        content: 'content',
+        author: 'author',
+        publishTime: 'publishTime',
+        digest: 'digest',
+        sourceUrl: 'sourceUrl',
+        images: 'images',
+        slug: 'slug',
+        siteName: 'siteName',
+        language: 'language',
+        tags: 'tags',
+        readingTime: 'readingTime',
+        created: 'extractedAt',
+        headImg: 'head_img'
+      }
+    },
+    fieldPresets: {
+      enabled: false,
+      presets: {}
+    },
+    advancedSettings: {
+      maxContentLength: 50000,
+      maxImages: 10,
+      generateSlug: true,
+      uploadImages: true,
+      sanitizeContent: true,
+      includeBlocksField: false,
+      putContentInBlocks: false,
+      blocksComponentName: 'blocks.rich-text',
+      enableImageCompression: true,
+      imageQuality: 0.8,
+      maxImageWidth: 1200,
+      maxImageHeight: 800,
+      smartImageReplace: true,
+      retryFailedImages: true,
+      uploadHeadImg: false,
+      headImgIndex: 0
+    },
+    enableCleanupRules: true,
+    customCleanupRules: []
+  };
+}
+
+// 深度合并配置对象（与background.js一致）
+function deepMergeUnifiedConfig(target, source) {
+  const result = { ...target };
+
+  for (const key in source) {
+    if (source.hasOwnProperty(key)) {
+      if (isUnifiedObject(source[key]) && isUnifiedObject(result[key])) {
+        result[key] = deepMergeUnifiedConfig(result[key], source[key]);
+      } else {
+        result[key] = source[key];
+      }
+    }
+  }
+
+  return result;
+}
+
+// 检查是否为对象（与background.js一致）
+function isUnifiedObject(item) {
+  return item && typeof item === 'object' && !Array.isArray(item);
+}
+
+// 验证统一配置有效性（与background.js一致）
+function validateUnifiedConfig(config) {
+  const errors = [];
+
+  if (!config) {
+    errors.push('Configuration is required');
+    return { valid: false, errors };
+  }
+
+  if (!config.strapiUrl) {
+    errors.push('Strapi URL is required');
+  } else {
+    try {
+      new URL(config.strapiUrl);
+    } catch {
+      errors.push('Invalid Strapi URL format');
+    }
+  }
+
+  if (!config.token) {
+    errors.push('Strapi API token is required');
+  }
+
+  if (!config.collection) {
+    errors.push('Strapi collection name is required');
+  }
+
+  if (config.fieldMapping && config.fieldMapping.enabled) {
+    if (!config.fieldMapping.fields) {
+      errors.push('Field mapping is enabled but no fields are defined');
+    } else {
+      const requiredFields = ['title', 'content'];
+      for (const field of requiredFields) {
+        if (!config.fieldMapping.fields[field]) {
+          errors.push(`Required field mapping missing: ${field}`);
+        }
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
 }
 
 // 🔥 新增：测试Strapi连接
@@ -480,19 +696,39 @@ async function testStrapiConnection(config) {
   }
 }
 
-// 初始化
-document.addEventListener('DOMContentLoaded', () => {
-  // 检查配置状态
-  chrome.storage.sync.get(['strapiUrl', 'token', 'collection'], (data) => {
-    if (!data.strapiUrl || !data.token || !data.collection) {
-      updateStatus('Please configure Strapi settings first', true);
+// 初始化（使用统一配置读取）
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    // 使用统一的配置读取逻辑检查配置状态
+    const config = await loadUnifiedConfig();
+    
+    console.log('🚀 Popup初始化，使用统一配置逻辑');
+    
+    // 验证配置
+    const validation = validateUnifiedConfig(config);
+    
+    if (!validation.valid) {
+      updateStatus('Please configure Strapi settings first: ' + validation.errors.join(', '), true);
       document.getElementById('config-warning').style.display = 'block';
+      console.warn('⚠️ 配置验证失败:', validation.errors);
+    } else {
+      console.log('✅ 配置验证通过');
+      // 隐藏配置警告（如果存在）
+      const warningElement = document.getElementById('config-warning');
+      if (warningElement) {
+        warningElement.style.display = 'none';
+      }
     }
     
-    // 🔥 自动运行调试
-    console.log('🔧 运行Strapi配置调试...');
-    debugStrapiConfig();
-  });
+    // 🔥 自动运行统一配置调试
+    console.log('🔧 运行统一Strapi配置调试...');
+    await debugStrapiConfig();
+    
+  } catch (error) {
+    console.error('❌ Popup初始化失败:', error);
+    updateStatus('Failed to load configuration: ' + error.message, true);
+    document.getElementById('config-warning').style.display = 'block';
+  }
   
   // 使用事件委托来处理动态生成的按钮点击
   // 这是一个更安全的方法，避免CSP问题

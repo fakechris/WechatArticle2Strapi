@@ -256,7 +256,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ---
 
-**Enhanced Article Extractor v0.3.1**  
+**Enhanced Article Extractor v0.3.2**  
 *专业级内容提取 • 丰富元数据收集 • 防扩展干扰保护 • 受 Obsidian Clipper 启发*
 
 ⭐ 如果这个项目对您有帮助，请给个 Star！
