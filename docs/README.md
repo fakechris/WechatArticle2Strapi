@@ -82,4 +82,16 @@ This extension allows users to extract articles from WeChat's public platform an
 - Field mapping and presets
 - Security features
 
+## Recent Updates
+
+### v0.5.2 (Latest) - Playwright自动化支持
+- 新增Playwright浏览器自动化功能
+- 支持动态内容提取和复杂页面交互
+- 详细技术文档请参考 `/technical/PLAYWRIGHT_INTEGRATION.md`
+
+### v0.5.0 - 重大架构重构
+- Chrome扩展与CLI工具统一核心逻辑
+- 代码重复减少90%，功能更强大
+- 完整重构总结请参考 `/summaries/重构完成总结.md`
+
 For the main project README, see the root directory `README.md`.

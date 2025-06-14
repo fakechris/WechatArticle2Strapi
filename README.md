@@ -1,15 +1,24 @@
 # 🚀 Enhanced Article Extractor
 
-![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)
+![Version](https://img.shields.io/badge/version-0.5.2-blue.svg)
 ![Chrome Extension](https://img.shields.io/badge/Chrome%20Extension-Manifest%20V3-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Architecture](https://img.shields.io/badge/架构-统一CLI逻辑-brightgreen.svg)
 
-**🎉 v0.5.0 重大更新！** 完全重构的Chrome扩展，与CLI工具共享统一核心逻辑，代码重复减少90%，功能更强大！
+**🎉 v0.5.2 最新更新！** 新增Playwright自动化支持，完全重构的Chrome扩展，与CLI工具共享统一核心逻辑，代码重复减少90%，功能更强大！
 
 一个受 **Obsidian Clipper** 启发的强大 Chrome 扩展，能够从任意网页提取丰富的元数据并保存到 Strapi CMS。支持专业级的内容提取、头图上传和智能元数据收集。
 
 ## ✨ 核心特性
+
+### 🎭 v0.5.2 Playwright 自动化支持
+新增强大的Playwright自动化功能，支持复杂页面交互：
+
+- **🎭 浏览器自动化**: 支持Chrome、Firefox、Safari等多种浏览器
+- **🔄 动态内容**: 处理JavaScript渲染的动态内容和单页应用
+- **⚡ 智能等待**: 自动等待页面加载完成和元素出现
+- **🎯 复杂交互**: 支持登录、验证码、点击、滚动等复杂操作
+- **📸 调试支持**: 截图功能，详细的操作日志
 
 ### 🚀 v0.5.0 重大架构更新
 完全重构的Chrome扩展，实现与CLI工具的逻辑统一：
