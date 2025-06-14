@@ -8,9 +8,34 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync } from 'fs';
+import validator from 'validator';
 import { CLIAdapter } from '../src/adapters/cli-adapter.js';
 import { isWeChatArticleUrl } from '../../shared/utils/url-utils.js';
 import ConfigManager from '../src/config.js';
+
+/**
+ * 验证URL是否有效（符合RFC规范）
+ * @param {string} url - URL字符串
+ * @returns {boolean} 是否有效
+ */
+function isValidUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  
+  // 使用validator库进行RFC规范的URL验证
+  return validator.isURL(url, {
+    protocols: ['http', 'https'],
+    require_protocol: true,
+    require_valid_protocol: true,
+    allow_underscores: true,
+    allow_trailing_dot: false,
+    allow_protocol_relative_urls: false,
+    allow_fragments: true,
+    allow_query_components: true,
+    validate_length: true
+  });
+}
 
 const program = new Command();
 
@@ -38,9 +63,9 @@ program
   .option('--quality <number>', '图片压缩质量 (0-1)', '0.8')
   .action(async (url, options) => {
     try {
-      // 验证URL
-      if (!isWeChatArticleUrl(url)) {
-        console.error(chalk.red('❌ 错误: 请提供有效的微信文章URL'));
+      // 验证URL - CLI工具支持更广泛的URL格式
+      if (!isValidUrl(url)) {
+        console.error(chalk.red('❌ 错误: 请提供有效的URL'));
         process.exit(1);
       }
 
