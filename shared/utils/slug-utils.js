@@ -3,6 +3,31 @@
  * 统一CLI和扩展中的Slug生成逻辑
  */
 
+// 懒加载limax模块
+let limaxCache = null;
+
+/**
+ * 获取limax模块（懒加载）
+ * @returns {Function|null} limax函数或null
+ */
+function getLimax() {
+  if (limaxCache === null) {
+    try {
+      // 尝试使用require（CommonJS环境）
+      if (typeof require !== 'undefined') {
+        limaxCache = require('limax');
+      } else {
+        // ES modules环境，标记为不可用
+        limaxCache = false;
+      }
+    } catch (error) {
+      console.warn('Limax module not available:', error.message);
+      limaxCache = false;
+    }
+  }
+  return limaxCache === false ? null : limaxCache;
+}
+
 /**
  * 生成文章Slug
  * @param {string} title - 文章标题
@@ -24,7 +49,18 @@ export function generateSlug(title, options = {}) {
   };
 
   try {
-    // 优先使用slug库（如果可用）
+    // 优先使用limax库
+    const limax = getLimax();
+    if (limax) {
+      return limax(title, {
+        tone: false,
+        replacement: defaultOptions.replacement,
+        lowercase: true,
+        separator: defaultOptions.replacement
+      }).substring(0, defaultOptions.maxLength);
+    }
+
+    // 浏览器环境，使用slug库（如果可用）
     if (typeof window !== 'undefined' && window.slug) {
       return window.slug(title, {
         replacement: defaultOptions.replacement,

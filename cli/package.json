@@ -6,6 +6,7 @@
   "main": "index.js",
   "bin": {
     "article-extractor": "./bin/cli.js",
+    "article-extractor-v2": "./bin/cli_v2.js",
     "strapi-import": "./bin/strapi-import.js"
   },
   "scripts": {
@@ -25,7 +26,7 @@
   "license": "MIT",
   "dependencies": {
     "defuddle": "^0.6.4",
-    "slug": "^11.0.0",
+    "limax": "^4.1.0",
     "commander": "^11.0.0",
     "jsdom": "^23.0.0",
     "axios": "^1.6.0",
@@ -37,7 +38,8 @@
     "form-data": "^4.0.0",
     "csv-parser": "^3.0.0",
     "progress": "^2.0.3",
-    "validator": "^13.11.0"
+    "validator": "^13.11.0",
+    "playwright": "^1.40.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

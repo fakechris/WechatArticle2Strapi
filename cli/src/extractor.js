@@ -638,21 +638,23 @@ class ArticleExtractor {
     if (!title || typeof title !== 'string') return '';
     
     try {
-      return slug(title, {
-        replacement: '-',
-        remove: /[*+~.()'"!:@]/g,
-        lower: true,
-        strict: false,
-        locale: 'zh',
-        trim: true
+      // Use limax for better Chinese support
+      const limax = require('limax');
+      return limax(title, {
+        tone: false,        // Remove tone marks for cleaner URLs
+        replacement: '-',   // Use hyphen as separator
+        lowercase: true,    // Convert to lowercase
+        separator: '-'      // Explicit separator
       }).substring(0, 60);
     } catch (error) {
+      console.warn('Limax slug generation failed, using fallback:', error.message);
       // Fallback slug generation
       return title
         .toLowerCase()
         .replace(/[^\w\s-]/g, '')
         .replace(/\s+/g, '-')
-        .substring(0, 60);
+        .replace(/^-+|-+$/g, '')
+        .substring(0, 60) || `article-${Date.now()}`;
     }
   }
 

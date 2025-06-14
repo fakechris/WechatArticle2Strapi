@@ -99,4 +99,79 @@ export const VERIFICATION_SELECTORS = [
   '[class*="verify"]',
   '.tips_global',
   '.verify_container'
-]; 
+];
+
+// 网站特定选择器配置
+export const SITE_SPECIFIC_SELECTORS = {
+  // 金融八卦女网站
+  'jinrongbaguanv.com': {
+    title: [
+      'title',                 // 页面标题优先
+      '#topTitleH5',           // 从DOM截图看到的标题ID
+      '.photoNews_title',      // 可能的标题类
+      '.article-title',
+      '.detail-title', 
+      '.news-title',
+      '.content-title',
+      '.page-title',
+      '.main-title',
+      '[class*="title"]',      // 任何包含title的class
+      'h1',
+      'h2',
+      '.title'
+    ],
+    content: [
+      '#content',              // 从DOM截图看到的主要内容ID
+      '.content_wrap',         // 内容包装类
+      '.article-content',
+      '.detail-content',
+      '.news-content', 
+      '.content-main',
+      '.article-body',
+      '.post-content',
+      '[class*="content"]',
+      '.main-content',
+      'main',
+      'article',
+      'body'                   // 最后备选整个body
+    ],
+    author: [
+      '.article-author',
+      '.author-name',
+      '.byline',
+      '.writer',
+      '.source',               // 可能的来源信息
+      '[class*="author"]',
+      '[class*="source"]'
+    ],
+    publishTime: [
+      '.publish-time',
+      '.article-time',
+      '.date',
+      '.time',
+      '[class*="time"]',
+      '[class*="date"]',
+      '.publish-date'
+    ],
+    imageContainers: [
+      '#content',              // 主要内容区域
+      '.content_wrap',         // 内容包装
+      '.article-content',
+      '.detail-content', 
+      '.news-content',
+      '.content-main',
+      'main',
+      'article',
+      'body'                   // 最后备选整个body
+    ]
+  },
+
+  // 可以继续添加其他网站的选择器
+  'example.com': {
+    title: ['.title', 'h1'],
+    content: ['.content', '.article'],
+    author: ['.author'],
+    publishTime: ['.date'],
+    imageContainers: ['.content']
+  }
+}; 

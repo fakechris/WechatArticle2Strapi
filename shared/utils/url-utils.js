@@ -16,7 +16,7 @@ export function isValidImageUrl(url) {
   // 去除空白字符
   url = url.trim();
 
-  // 基本URL格式检查
+  // 基本URL格式检查，包括协议相对URL（// 开头）
   if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('//')) {
     return false;
   }

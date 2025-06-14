@@ -15,13 +15,13 @@ export class CLIAdapter {
       debug: false,
       timeout: 30000,
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      environment: 'node',
+      environment: 'node', // 默认为node环境，子类可以覆盖
       ...options
     };
 
     // 创建处理管道
     this.pipeline = createArticlePipeline({
-      environment: 'node',
+      environment: this.options.environment, // 使用实际的环境设置
       verbose: this.options.verbose,
       debug: this.options.debug,
       strapi: this.options.strapiConfig,
@@ -184,6 +184,91 @@ export class CLIAdapter {
       }
     };
 
+    // 添加 createTreeWalker 支持
+    if (!window.document.createTreeWalker) {
+      window.document.createTreeWalker = function(root, whatToShow, filter, entityReferenceExpansion) {
+        // 简化的TreeWalker实现
+        const walker = {
+          root: root,
+          whatToShow: whatToShow || 0xFFFFFFFF,
+          filter: filter,
+          currentNode: root,
+          
+          nextNode: function() {
+            const traverse = (node) => {
+              // 深度优先遍历
+              if (node.firstChild) {
+                node = node.firstChild;
+                if (this.whatToShow & this.getNodeType(node.nodeType)) {
+                  this.currentNode = node;
+                  return node;
+                }
+                return traverse(node);
+              }
+              
+              while (node && node !== this.root) {
+                if (node.nextSibling) {
+                  node = node.nextSibling;
+                  if (this.whatToShow & this.getNodeType(node.nodeType)) {
+                    this.currentNode = node;
+                    return node;
+                  }
+                  return traverse(node);
+                }
+                node = node.parentNode;
+              }
+              
+              return null;
+            };
+            
+            return traverse(this.currentNode);
+          },
+          
+          getNodeType: function(nodeType) {
+            // NodeFilter constants
+            switch(nodeType) {
+              case 1: return 0x1; // ELEMENT_NODE
+              case 2: return 0x2; // ATTRIBUTE_NODE  
+              case 3: return 0x4; // TEXT_NODE
+              case 4: return 0x8; // CDATA_SECTION_NODE
+              case 8: return 0x80; // COMMENT_NODE
+              case 9: return 0x100; // DOCUMENT_NODE
+              default: return 0x400; // OTHER
+            }
+          }
+        };
+        
+        return walker;
+      };
+    }
+
+    // 添加 NodeFilter 常量
+    if (!window.NodeFilter) {
+      window.NodeFilter = {
+        SHOW_ALL: 0xFFFFFFFF,
+        SHOW_ELEMENT: 0x1,
+        SHOW_ATTRIBUTE: 0x2,
+        SHOW_TEXT: 0x4,
+        SHOW_CDATA_SECTION: 0x8,
+        SHOW_ENTITY_REFERENCE: 0x10,
+        SHOW_ENTITY: 0x20,
+        SHOW_PROCESSING_INSTRUCTION: 0x40,
+        SHOW_COMMENT: 0x80,
+        SHOW_DOCUMENT: 0x100,
+        SHOW_DOCUMENT_TYPE: 0x200,
+        SHOW_DOCUMENT_FRAGMENT: 0x400,
+        SHOW_NOTATION: 0x800
+      };
+    }
+
+    // 确保全局可访问
+    if (!window.document.defaultView) {
+      window.document.defaultView = window;
+    }
+    if (!window.document.defaultView.NodeFilter) {
+      window.document.defaultView.NodeFilter = window.NodeFilter;
+    }
+
     if (this.options.debug) {
       this.log('已添加浏览器API polyfills', null, 'debug');
     }
@@ -305,10 +390,19 @@ export class CLIAdapter {
     
     for (const image of images) {
       try {
-        // 简单的URL验证
-        if (image.src && image.src.startsWith('http')) {
+        let normalizedSrc = image.src;
+        
+        // 处理协议相对URL（以 // 开头）
+        if (normalizedSrc && normalizedSrc.startsWith('//')) {
+          normalizedSrc = 'https:' + normalizedSrc;
+        }
+        
+        // URL验证 - 包括协议相对URL
+        if (normalizedSrc && (normalizedSrc.startsWith('http') || normalizedSrc.startsWith('//'))) {
           processedImages.push({
             ...image,
+            src: normalizedSrc, // 使用规范化后的URL
+            originalSrc: image.src, // 保留原始URL
             validated: true,
             processedAt: new Date().toISOString()
           });
