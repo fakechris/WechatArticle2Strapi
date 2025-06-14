@@ -246,6 +246,11 @@ class ImageProcessor {
 
   resolveImageUrl(url, baseUrl) {
     try {
+      // Handle protocol-relative URLs (starting with //)
+      if (url.startsWith('//')) {
+        return 'https:' + url;
+      }
+
       // If it's already an absolute URL, return as-is
       new URL(url);
       return url;
@@ -269,6 +274,11 @@ class ImageProcessor {
     
     for (const prefix of invalidPrefixes) {
       if (url.startsWith(prefix)) return false;
+    }
+    
+    // Allow protocol-relative URLs before they are normalized
+    if (url.startsWith('//')) {
+      return true;
     }
     
     try {

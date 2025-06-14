@@ -443,10 +443,23 @@ async function processArticleImages(article) {
     ⏱️ 耗时: ${processingTime}ms
     🚀 平均速度: ${Math.round(processingTime / progressTracker.total)}ms/图片`);
 
+  // 初始化 allImageIds 数组，保留已有的头图ID
+  const allImageIds = article.allImageIds || [];
+  
+  // 收集所有成功上传的图片ID
+  processedImages.forEach(processedImage => {
+    if (processedImage.id && !allImageIds.includes(processedImage.id)) {
+      allImageIds.push(processedImage.id);
+    }
+  });
+
+  console.log(`所有图片ID数组:`, { allImageIds });
+
   return {
     ...article,
     content: updatedContent,
     processedImages,
+    allImageIds: allImageIds,
     imageProcessingStats: {
       total: progressTracker.total,
       successful: progressTracker.successful,
@@ -463,134 +476,81 @@ async function sendToStrapi(article) {
     title: article.title,
     hasImages: !!article.images,
     imageCount: article.images ? article.images.length : 0,
-    contentLength: article.content ? article.content.length : 0
+    contentLength: article.content ? article.content.length : 0,
+    extractionMethod: article.extractionMethod
   });
   
   try {
-    const config = await chrome.storage.sync.get(['strapiUrl', 'token', 'collection', 'fieldMapping', 'fieldPresets', 'advancedSettings']);
-    console.log('Config loaded:', {
+    // 使用统一的配置读取逻辑
+    const config = await loadUnifiedConfig();
+    
+    console.log('Unified config loaded:', {
       hasUrl: !!config.strapiUrl,
       hasToken: !!config.token,
       collection: config.collection,
-      fieldMappingEnabled: config.fieldMapping?.enabled,
-      fieldMappingFields: config.fieldMapping?.fields,
-      fieldPresetsEnabled: config.fieldPresets?.enabled,
-      fieldPresetsCount: config.fieldPresets?.presets ? Object.keys(config.fieldPresets.presets).length : 0,
-      // 🔥 新增：头图配置调试信息
-      uploadHeadImg: config.advancedSettings?.uploadHeadImg,
-      headImgIndex: config.advancedSettings?.headImgIndex,
-      headImgField: config.fieldMapping?.fields?.headImg
+      fieldMappingEnabled: config.fieldMapping?.enabled || false,
+      environment: 'chrome-extension'
     });
     
     // 验证配置
-    if (!config.strapiUrl || !config.token || !config.collection) {
-      throw new Error('Strapi configuration is incomplete. Please check options.');
+    const validation = validateUnifiedConfig(config);
+    if (!validation.valid) {
+      throw new Error(`Configuration validation failed: ${validation.errors.join(', ')}`);
     }
     
-    // 使用默认值如果设置不存在
-    const fieldMapping = config.fieldMapping || { enabled: false, fields: {} };
-    const fieldPresets = config.fieldPresets || { enabled: false, presets: {} };
-    const advancedSettings = config.advancedSettings || {
-      maxContentLength: 50000,
-      maxImages: 10,
-      generateSlug: true,
-      uploadImages: true,
-      sanitizeContent: true,
-      // 🔥 新增：头图相关设置
-      uploadHeadImg: false,
-      headImgIndex: 0
-    };
-    
-    // 🔥 新增：头图配置详细调试
-    console.log('🖼️ 头图配置检查:', {
-      uploadHeadImg: advancedSettings.uploadHeadImg,
-      headImgIndex: advancedSettings.headImgIndex,
-      hasImages: !!article.images,
-      imageCount: article.images ? article.images.length : 0,
-      headImgField: fieldMapping.fields?.headImg
-    });
-    
-    // 🔥 新增：处理头图（如果启用）
+    // 🔥 新增：处理图片上传（如果启用）
     let processedArticle = article;
-    if (advancedSettings.uploadHeadImg) {
-      console.log('🖼️ 头图上传功能已启用，开始处理...');
-      processedArticle = await processHeadImage(processedArticle, advancedSettings);
-      console.log('🖼️ 头图处理结果:', {
-        hasHeadImageId: !!processedArticle.headImageId,
-        headImageId: processedArticle.headImageId,
-        hasHeadImageError: !!processedArticle.headImageError,
-        headImageError: processedArticle.headImageError
+    const advancedSettings = config.advancedSettings || {};
+    
+    // 处理所有图片上传（包括头图和内容图片）
+    if ((advancedSettings.uploadHeadImg || advancedSettings.uploadImages) && article.images && article.images.length > 0) {
+      
+      // 先处理头图（如果启用）
+      if (advancedSettings.uploadHeadImg) {
+        console.log('开始处理头图上传', {
+          uploadHeadImg: advancedSettings.uploadHeadImg,
+          imageCount: article.images.length,
+          headImgIndex: advancedSettings.headImgIndex || 0
+        });
+        processedArticle = await processHeadImage(processedArticle, advancedSettings);
+        console.log('头图处理完成', {
+          hasHeadImageId: !!processedArticle.headImageId,
+          headImageId: processedArticle.headImageId
+        });
+      }
+      
+      // 再处理文章图片（如果启用）
+      if (advancedSettings.uploadImages) {
+        console.log('开始处理文章图片上传');
+        processedArticle = await processArticleImages(processedArticle);
+      }
+      
+    } else if (article.images && article.images.length > 0) {
+      // 有图片但未启用上传功能
+      console.log('⚠️ 发现图片但未启用图片上传功能，图片将被跳过', {
+        imageCount: article.images.length,
+        uploadHeadImg: advancedSettings.uploadHeadImg,
+        uploadImages: advancedSettings.uploadImages
       });
     } else {
-      console.log('📷 头图上传功能未启用，跳过头图处理');
+      console.log('跳过图片处理', {
+        hasImages: !!(article.images && article.images.length > 0),
+        imageCount: article.images ? article.images.length : 0,
+        reason: '没有图片或未启用图片上传'
+      });
     }
     
-    // 处理图片（如果启用）
-    if (advancedSettings.uploadImages) {
-      processedArticle = await processArticleImages(processedArticle);
-    }
+    // 使用统一的字段映射构建数据
+    const articleData = buildUnifiedStrapiData(processedArticle, config);
     
-    // 验证和格式化数据
-    const articleData = validateArticleData(processedArticle, fieldMapping, advancedSettings, fieldPresets);
+    console.log('Built article data with unified logic:', {
+      fieldMappingEnabled: config.fieldMapping?.enabled || false,
+      dataKeys: Object.keys(articleData),
+      articleDataPreview: JSON.stringify(articleData).substring(0, 200) + '...'
+    });
     
     const endpoint = `${config.strapiUrl}/api/${config.collection}`;
-    
-    // 先测试API是否可访问
-    console.log('Testing API accessibility...');
-    try {
-      const testResponse = await fetch(`${config.strapiUrl}/api/${config.collection}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${config.token}`
-        }
-      });
-      console.log('API Test Status:', testResponse.status);
-      if (testResponse.status === 404) {
-        // 尝试不带 /api 前缀的路径
-        const altEndpoint = `${config.strapiUrl}/${config.collection}`;
-        console.log('Trying alternative endpoint:', altEndpoint);
-        const altTestResponse = await fetch(altEndpoint, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${config.token}`
-          }
-        });
-        console.log('Alternative API Test Status:', altTestResponse.status);
-        if (altTestResponse.ok) {
-          endpoint = altEndpoint;
-          console.log('Using alternative endpoint:', endpoint);
-        }
-      }
-    } catch (testError) {
-      console.warn('API test failed:', testError);
-    }
-    
-    console.log('Sending article data to Strapi:', {
-      endpoint,
-      dataKeys: Object.keys(articleData),
-      fieldMapping: fieldMapping.enabled ? fieldMapping.fields : 'default',
-      maxContentLength: advancedSettings.maxContentLength
-    });
-    
-    // 发送前最后检查
-    console.log('About to send request with data:', {
-      dataKeys: Object.keys(articleData),
-      dataContent: articleData
-    });
-    
-    const requestBody = { data: articleData };
-    const requestBodyString = JSON.stringify(requestBody);
-    
-    console.log('Request body string length:', requestBodyString.length);
-    console.log('Request body preview:', requestBodyString.substring(0, 500) + '...');
-    
-    console.log('=== Sending Request ===');
-    console.log('Endpoint:', endpoint);
-    console.log('Method: POST');
-    console.log('Headers:', {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.token.substring(0, 10)}...`
-    });
+    console.log('Sending to endpoint:', endpoint);
     
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -598,128 +558,381 @@ async function sendToStrapi(article) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.token}`
       },
-      body: requestBodyString
+      body: JSON.stringify({ data: articleData })
     });
     
-    console.log('=== Response Details ===');
-    console.log('Status:', response.status);
-    console.log('Status Text:', response.statusText);
-    console.log('Headers:', Object.fromEntries(response.headers.entries()));
+    console.log('Response status:', response.status);
     
     if (!response.ok) {
-      // 先读取响应文本，避免多次读取body stream
-      const responseText = await response.text();
-      let errorMessage = `HTTP ${response.status}`;
-      
-      try {
-        // 尝试解析为JSON
-        const errorData = JSON.parse(responseText);
-        
-        // 检查是否是slug重复错误
-        if (errorData.error && 
-            errorData.error.name === 'ValidationError' && 
-            errorData.error.message && 
-            errorData.error.message.includes('unique') &&
-            errorData.error.details && 
-            errorData.error.details.errors) {
-          
-          // 查找slug字段的错误
-          const slugError = errorData.error.details.errors.find(err => 
-            err.path && err.path.includes('slug') && err.message.includes('unique')
-          );
-          
-          if (slugError) {
-            console.log('Slug uniqueness conflict detected, retrying with new slug...');
-            
-            // 使用已存在的fieldMapping和advancedSettings变量
-            const fieldMap = fieldMapping.enabled ? fieldMapping.fields : {
-              title: 'title', content: 'content', slug: 'slug'
-            };
-            
-            if (fieldMap.slug && advancedSettings.generateSlug) {
-              // 生成新的更唯一的slug
-              const timestamp = Date.now();
-              const randomSuffix = Math.random().toString(36).substring(2, 8);
-              const newSlug = generateSlug(processedArticle.title) + `-${timestamp}-${randomSuffix}`;
-              
-              // 更新数据中的slug
-              const updatedData = { ...articleData };
-              updatedData[fieldMap.slug] = newSlug.substring(0, 60);
-              
-              console.log(`Retrying with new slug: ${updatedData[fieldMap.slug]}`);
-              console.log('Updated data keys:', Object.keys(updatedData));
-              
-              // 重新发送请求
-              const retryRequestBody = { data: updatedData };
-              const retryResponse = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${config.token}`
-                },
-                body: JSON.stringify(retryRequestBody)
-              });
-              
-              if (retryResponse.ok) {
-                const result = await retryResponse.json();
-                console.log('=== Retry Successful ===');
-                console.log('Retry response:', result);
-                console.log('Retry Article ID:', result.data?.id);
-                return result;
-              } else {
-                // 如果重试还是失败，继续原来的错误处理逻辑
-                const retryErrorText = await retryResponse.text();
-                console.error('=== Retry Failed ===');
-                console.error('Retry error status:', retryResponse.status);
-                console.error('Retry error text:', retryErrorText);
-                throw new Error(`Retry failed (${retryResponse.status}): ${retryErrorText.substring(0, 200)}`);
-              }
-            }
-          }
-        }
-        
-        // 提供更友好的错误信息
-        if (errorData.error && errorData.error.name === 'ValidationError') {
-          const field = errorData.error.details?.key || 'unknown field';
-          const message = errorData.error.message || 'validation failed';
-          throw new Error(`Validation error on field '${field}': ${message}. Please check your Strapi collection configuration and field mapping.`);
-        }
-        
-        // 检查是否是字段不存在的错误
-        if (errorData.error && errorData.error.message && errorData.error.message.includes('Invalid key')) {
-          throw new Error(`Field mapping error: ${errorData.error.message}. Please check your field mapping configuration in settings.`);
-        }
-        
-        // 使用错误数据中的消息
-        if (errorData.error && errorData.error.message) {
-          errorMessage = errorData.error.message;
-          
-          // 如果是字段验证错误，提供更详细的信息
-          if (errorData.error.details && errorData.error.details.errors) {
-            const detailErrors = errorData.error.details.errors.map(e => e.message).join(', ');
-            errorMessage += `: ${detailErrors}`;
-          }
-        } else if (errorData.message) {
-          errorMessage = errorData.message;
-        }
-      } catch (parseError) {
-        // 如果不是JSON，使用原始响应文本
-        errorMessage = responseText.substring(0, 200);
-      }
-      
-      throw new Error(`Strapi API error (${response.status}): ${errorMessage}`);
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
     
     const result = await response.json();
-    console.log('=== Strapi API Response ===');
-    console.log('Full response:', result);
-    console.log('Response data:', result.data);
-    console.log('Response ID:', result.data?.id);
+    console.log('Upload successful:', result);
     return result;
   } catch (error) {
     console.error('Error sending to Strapi:', error);
     throw error;
   }
+}
+
+// ========== 统一配置读取和数据构建逻辑 ==========
+
+/**
+ * 统一的配置读取逻辑（与CLI一致）
+ * @returns {Promise<Object>} 标准化的配置对象
+ */
+async function loadUnifiedConfig() {
+  return new Promise((resolve, reject) => {
+    const configKeys = [
+      'strapiUrl', 'token', 'collection', 
+      'fieldMapping', 'fieldPresets', 'advancedSettings',
+      'enableCleanupRules', 'customCleanupRules'
+    ];
+
+    chrome.storage.sync.get(configKeys, (data) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      // 标准化配置，确保包含所有默认值（与CLI一致）
+      const normalizedConfig = normalizeUnifiedConfig(data);
+      resolve(normalizedConfig);
+    });
+  });
+}
+
+/**
+ * 获取默认配置（与CLI完全一致）
+ * @returns {Object} 默认配置对象
+ */
+function getUnifiedDefaultConfig() {
+  return {
+    // Basic Strapi configuration (flat structure like Chrome extension)
+    strapiUrl: '',
+    token: '',
+    collection: 'articles',
+
+    // Field mapping configuration (matches CLI exactly)
+    fieldMapping: {
+      enabled: false,
+      fields: {
+        title: 'title',
+        content: 'content',
+        author: 'author',
+        publishTime: 'publishTime',
+        digest: 'digest',
+        sourceUrl: 'sourceUrl',
+        images: 'images',
+        slug: 'slug',
+        // Enhanced metadata fields
+        siteName: 'siteName',
+        language: 'language',
+        tags: 'tags',
+        readingTime: 'readingTime',
+        created: 'extractedAt',
+        // Head image field
+        headImg: 'head_img'
+      }
+    },
+
+    // Field presets configuration (matches CLI exactly)
+    fieldPresets: {
+      enabled: false,
+      presets: {}
+    },
+
+    // Advanced settings (matches CLI exactly)
+    advancedSettings: {
+      maxContentLength: 50000,
+      maxImages: 10,
+      generateSlug: true,
+      uploadImages: true,
+      sanitizeContent: true,
+      includeBlocksField: false,
+      putContentInBlocks: false,
+      blocksComponentName: 'blocks.rich-text',
+      // Image processing settings
+      enableImageCompression: true,
+      imageQuality: 0.8,
+      maxImageWidth: 1200,
+      maxImageHeight: 800,
+      smartImageReplace: true,
+      retryFailedImages: true,
+      // Head image settings
+      uploadHeadImg: false,
+      headImgIndex: 0
+    },
+
+    // Cleanup rules (matches CLI exactly)
+    enableCleanupRules: true,
+    customCleanupRules: []
+  };
+}
+
+/**
+ * 标准化配置对象（确保包含所有必要字段）
+ * @param {Object} userConfig - 用户配置
+ * @returns {Object} 标准化后的配置
+ */
+function normalizeUnifiedConfig(userConfig = {}) {
+  const defaultConfig = getUnifiedDefaultConfig();
+  return deepMergeUnifiedConfig(defaultConfig, userConfig);
+}
+
+/**
+ * 深度合并配置对象
+ * @param {Object} target - 目标对象
+ * @param {Object} source - 源对象
+ * @returns {Object} 合并后的对象
+ */
+function deepMergeUnifiedConfig(target, source) {
+  const result = { ...target };
+
+  for (const key in source) {
+    if (source.hasOwnProperty(key)) {
+      if (isUnifiedObject(source[key]) && isUnifiedObject(result[key])) {
+        result[key] = deepMergeUnifiedConfig(result[key], source[key]);
+      } else {
+        result[key] = source[key];
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 检查是否为对象
+ * @param {*} item - 待检查的项
+ * @returns {boolean} 是否为对象
+ */
+function isUnifiedObject(item) {
+  return item && typeof item === 'object' && !Array.isArray(item);
+}
+
+/**
+ * 验证统一配置有效性
+ * @param {Object} config - 配置对象
+ * @returns {Object} 验证结果 {valid: boolean, errors: string[]}
+ */
+function validateUnifiedConfig(config) {
+  const errors = [];
+
+  if (!config) {
+    errors.push('Configuration is required');
+    return { valid: false, errors };
+  }
+
+  // 验证基本Strapi配置
+  if (!config.strapiUrl) {
+    errors.push('Strapi URL is required');
+  } else {
+    try {
+      new URL(config.strapiUrl);
+    } catch {
+      errors.push('Invalid Strapi URL format');
+    }
+  }
+
+  if (!config.token) {
+    errors.push('Strapi API token is required');
+  }
+
+  if (!config.collection) {
+    errors.push('Strapi collection name is required');
+  }
+
+  // 验证字段映射
+  if (config.fieldMapping && config.fieldMapping.enabled) {
+    if (!config.fieldMapping.fields) {
+      errors.push('Field mapping is enabled but no fields are defined');
+    } else {
+      const requiredFields = ['title', 'content'];
+      for (const field of requiredFields) {
+        if (!config.fieldMapping.fields[field]) {
+          errors.push(`Required field mapping missing: ${field}`);
+        }
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * 使用统一逻辑构建Strapi数据（与CLI完全一致）
+ * @param {Object} article - 文章对象
+ * @param {Object} config - 统一配置对象
+ * @returns {Object} Strapi格式的数据
+ */
+function buildUnifiedStrapiData(article, config) {
+  const fieldMapping = config.fieldMapping || { enabled: false, fields: {} };
+  const fieldPresets = config.fieldPresets || { enabled: false, presets: {} };
+  const advancedSettings = config.advancedSettings || {};
+  
+  // 获取字段映射 - 与CLI逻辑完全一致
+  const fieldMap = fieldMapping.enabled ? fieldMapping.fields : getCompleteDefaultFieldMapping();
+  
+  console.log('Using unified field mapping:', { 
+    enabled: fieldMapping.enabled, 
+    fieldMapKeys: Object.keys(fieldMap),
+    presetsEnabled: fieldPresets.enabled,
+    presetsCount: Object.keys(fieldPresets.presets || {}).length
+  });
+  
+  // 构建基础数据
+  const data = {};
+  
+  // 必需字段
+  if (fieldMap.title && article.title) {
+    data[fieldMap.title] = article.title.trim().substring(0, 255);
+  }
+  
+  if (fieldMap.content && article.content) {
+    const maxContentLength = advancedSettings.maxContentLength || 50000;
+    if (advancedSettings.sanitizeContent !== false) {
+      data[fieldMap.content] = sanitizeContent(article.content, maxContentLength);
+    } else {
+      data[fieldMap.content] = article.content.substring(0, maxContentLength);
+    }
+  }
+  
+  // 可选字段 - 与CLI逻辑一致，支持空字符串字段映射
+  addUnifiedOptionalField(data, fieldMap, 'author', article.author, 100);
+  addUnifiedOptionalField(data, fieldMap, 'publishTime', article.publishTime);
+  addUnifiedOptionalField(data, fieldMap, 'digest', article.digest, 500);
+  addUnifiedOptionalField(data, fieldMap, 'sourceUrl', article.url);
+  
+  // 图片字段 - 修改为支持所有图片ID数组
+  if (article.allImageIds && article.allImageIds.length > 0 && fieldMap.images) {
+    // Strapi v4 多选media字段格式：ID数组
+    data[fieldMap.images] = article.allImageIds.map(id => Number(id));
+    
+    console.log('设置图片数组字段:', { 
+      field: fieldMap.images, 
+      imageIds: article.allImageIds,
+      finalValue: data[fieldMap.images]
+    });
+  }
+  
+  // 头图字段 - 修复Strapi media字段格式
+  if (article.headImageId && fieldMap.headImg) {
+    // Strapi v4 单选media字段格式：直接使用数字ID
+    const headImgValue = Number(article.headImageId);
+    data[fieldMap.headImg] = headImgValue;
+    
+    console.log('设置头图字段:', { 
+      field: fieldMap.headImg, 
+      originalId: article.headImageId,
+      finalValue: headImgValue,
+      valueType: typeof headImgValue
+    });
+  }
+  
+  // Slug字段
+  if (advancedSettings.generateSlug && fieldMap.slug && article.title) {
+    const slugValue = article.slug || generateSlug(article.title);
+    data[fieldMap.slug] = slugValue;
+  }
+  
+  // 增强元数据字段
+  addUnifiedOptionalField(data, fieldMap, 'siteName', article.siteName, 100);
+  addUnifiedOptionalField(data, fieldMap, 'language', article.language, 10);
+  addUnifiedOptionalField(data, fieldMap, 'tags', article.tags);
+  addUnifiedOptionalField(data, fieldMap, 'readingTime', article.readingTime);
+  addUnifiedOptionalField(data, fieldMap, 'created', article.extractedAt || new Date().toISOString());
+  
+  // 🔥 新增：字段预设处理（与CLI一致）
+  if (fieldPresets.enabled && fieldPresets.presets) {
+    for (const [field, preset] of Object.entries(fieldPresets.presets)) {
+      if (preset.value !== undefined) {
+        data[field] = preset.value;
+        console.log('应用预设字段:', { field, value: preset.value });
+      }
+    }
+  }
+  
+  console.log('Built unified Strapi data:', {
+    keys: Object.keys(data),
+    hasPresets: fieldPresets.enabled,
+    dataSize: JSON.stringify(data).length
+  });
+  
+  return data;
+}
+
+/**
+ * 添加可选字段的统一逻辑（与CLI完全一致）
+ */
+function addUnifiedOptionalField(data, fieldMap, sourceField, value, maxLength = null) {
+  // 检查字段映射中是否定义了目标字段且不为空字符串
+  const targetField = fieldMap[sourceField];
+  if (!targetField || targetField.trim() === '') {
+    return; // 如果字段映射为空或空字符串，跳过此字段
+  }
+  
+  // 检查值是否存在且有意义
+  if (value === undefined || value === null) {
+    return;
+  }
+  
+  // 处理空字符串 - 只有非空字符串才添加
+  if (typeof value === 'string' && value.trim() === '') {
+    return;
+  }
+  
+  // 处理空数组
+  if (Array.isArray(value) && value.length === 0) {
+    return;
+  }
+  
+  let processedValue = value;
+  
+  // 字符串长度限制和清理
+  if (typeof value === 'string' && maxLength) {
+    processedValue = value.trim().substring(0, maxLength);
+  } else if (typeof value === 'string') {
+    processedValue = value.trim();
+  }
+  
+  // 最终检查处理后的值
+  if (processedValue !== undefined && processedValue !== null && processedValue !== '') {
+    data[targetField] = processedValue;
+    console.log('字段映射成功:', { 
+      source: sourceField, 
+      target: targetField, 
+      valueType: typeof processedValue,
+      valueLength: typeof processedValue === 'string' ? processedValue.length : undefined
+    });
+  }
+}
+
+/**
+ * 获取完整的默认字段映射（与CLI一致）
+ */
+function getCompleteDefaultFieldMapping() {
+  return {
+    title: 'title',
+    content: 'content',
+    author: 'author',
+    publishTime: 'publishTime',
+    digest: 'digest',
+    sourceUrl: 'sourceUrl',
+    images: 'images',
+    slug: 'slug',
+    siteName: 'siteName',
+    language: 'language',
+    tags: 'tags',
+    readingTime: 'readingTime',
+    created: 'extractedAt',
+    headImg: 'head_img'
+  };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -734,7 +947,169 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     return true; // 保持消息通道开放
   }
+  
+  if (msg.type === 'previewArticle') {
+    console.log('=== Preview Article Request ===');
+    console.log('Tab ID:', msg.tabId);
+    
+    // 使用和Extract相同的完整提取逻辑，但不上传到Strapi
+    extractArticleForPreview(msg.tabId)
+      .then(article => {
+        console.log('✅ Preview提取成功:', {
+          title: article.title,
+          contentLength: article.content?.length || 0,
+          method: article.extractionMethod,
+          imageCount: article.images?.length || 0
+        });
+        sendResponse({ success: true, data: article });
+      })
+      .catch(err => {
+        console.error('=== Preview Extraction Error ===');
+        console.error('Error:', err.message);
+        sendResponse({ success: false, error: err.message });
+      });
+    return true; // 保持消息通道开放
+  }
 });
+
+// Preview文章提取功能 - 使用和CLI相同的完整提取逻辑
+async function extractArticleForPreview(tabId) {
+  console.log('=== extractArticleForPreview ===');
+  console.log('Tab ID:', tabId);
+  
+  try {
+    console.log('📤 发送FULL_EXTRACT消息到content script...');
+    console.log('Tab ID:', tabId);
+    
+    // 先检查tab是否存在
+    const tab = await chrome.tabs.get(tabId);
+    console.log('📋 Tab信息:', {
+      id: tab.id,
+      url: tab.url,
+      status: tab.status,
+      title: tab.title
+    });
+    
+    // 发送完整提取请求，获取页面完整内容和元数据
+    const result = await new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tabId, { 
+        type: 'FULL_EXTRACT',  // 新的完整提取类型
+        options: {
+          includeFullContent: true,  // 不截断内容
+          includeImages: true,
+          includeMetadata: true,
+          extractMethod: 'wechat-enhanced'  // 指定使用微信增强提取
+        }
+      }, (response) => {
+        console.log('📨 收到content script响应:', response);
+        console.log('Chrome runtime error:', chrome.runtime.lastError);
+        
+        if (chrome.runtime.lastError) {
+          reject(new Error(`Content script通信错误: ${chrome.runtime.lastError.message}`));
+          return;
+        }
+        
+        resolve(response);
+      });
+    });
+    
+    console.log('🔍 解析响应结果:', {
+      hasResult: !!result,
+      resultType: typeof result,
+      hasTitle: !!(result && result.title),
+      isSuccess: !!(result && result.success),
+      hasData: !!(result && result.data)
+    });
+    
+    // 处理不同的响应格式
+    let article = null;
+    if (result && result.success && result.data) {
+      // 包装格式响应
+      article = result.data;
+    } else if (result && result.title) {
+      // 直接文章格式响应
+      article = result;
+    }
+    
+    if (!article || !article.title) {
+      throw new Error('完整提取失败：没有找到文章内容或响应格式无效');
+    }
+    
+    console.log('✅ 完整提取成功:', {
+      title: article.title,
+      contentLength: article.content?.length || 0,
+      hasImages: !!(article.images && article.images.length > 0),
+      extractionMethod: article.extractionMethod
+    });
+    
+    // 处理和标准化结果，确保和CLI一致
+    const enhancedArticle = {
+      ...article,
+      // 确保必要字段存在
+      images: article.images || [],
+      author: article.author || '',
+      publishTime: article.publishTime || '',
+      digest: article.digest || extractDigestFromContent(article.content, article.title),
+      slug: article.slug || generateSlug(article.title),
+      domain: article.domain || extractDomainFromUrl(article.url),
+      siteName: article.siteName || article.author || '微信公众号',
+      wordCount: article.wordCount || estimateWordCount(article.content),
+      extractedAt: new Date().toISOString(),
+      extractionMethod: article.extractionMethod || 'wechat-enhanced-preview'
+    };
+    
+    return enhancedArticle;
+    
+  } catch (error) {
+    console.error('❌ Preview完整提取失败:', error);
+    throw new Error(`完整提取失败: ${error.message}`);
+  }
+}
+
+// 从内容中提取摘要（如果没有digest）
+function extractDigestFromContent(content, title) {
+  if (!content) return '';
+  
+  // 移除HTML标签，获取纯文本
+  const textContent = content.replace(/<[^>]*>/g, '').trim();
+  
+  // 提取前150个字符作为摘要
+  let digest = textContent.substring(0, 150);
+  if (textContent.length > 150) {
+    // 尝试在句号处截断
+    const lastSentenceEnd = Math.max(
+      digest.lastIndexOf('。'),
+      digest.lastIndexOf('！'),
+      digest.lastIndexOf('？')
+    );
+    
+    if (lastSentenceEnd > 50) {
+      digest = digest.substring(0, lastSentenceEnd + 1);
+    } else {
+      digest += '...';
+    }
+  }
+  
+  return digest;
+}
+
+// 辅助函数：从URL提取域名
+function extractDomainFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch (error) {
+    return 'unknown';
+  }
+}
+
+// 辅助函数：估算字数（简化版）
+function estimateWordCount(content) {
+  if (!content) return 0;
+  const textContent = content.replace(/<[^>]*>/g, '');
+  const words = textContent.match(/[\u4e00-\u9fa5]|[a-zA-Z]+/g);
+  return words ? words.length : 0;
+}
 
 // 新增辅助函数支持增强的图片处理功能
 
@@ -1036,6 +1411,82 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// 🔥 新增：获取图片实际尺寸
+async function getImageDimensions(imageUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    
+    img.onload = function() {
+      resolve({
+        width: this.naturalWidth,
+        height: this.naturalHeight,
+        aspectRatio: this.naturalWidth / this.naturalHeight
+      });
+    };
+    
+    img.onerror = function() {
+      reject(new Error(`无法加载图片: ${imageUrl}`));
+    };
+    
+    // 设置跨域支持
+    img.crossOrigin = 'anonymous';
+    img.src = imageUrl;
+  });
+}
+
+// 🔥 新增：检查图片是否符合头图尺寸要求
+async function isValidHeadImage(imageUrl, minWidth = 200, minHeight = 200) {
+  try {
+    const dimensions = await getImageDimensions(imageUrl);
+    console.log(`📏 图片尺寸检查:`, {
+      url: imageUrl.substring(0, 60) + '...',
+      width: dimensions.width,
+      height: dimensions.height,
+      minWidth,
+      minHeight,
+      isValid: dimensions.width >= minWidth && dimensions.height >= minHeight
+    });
+    
+    return {
+      isValid: dimensions.width >= minWidth && dimensions.height >= minHeight,
+      dimensions
+    };
+  } catch (error) {
+    console.warn(`⚠️ 图片尺寸检查失败: ${error.message}`);
+    // 如果无法获取尺寸，返回false（不符合要求）
+    return {
+      isValid: false,
+      error: error.message
+    };
+  }
+}
+
+// 🔥 新增：查找符合尺寸要求的头图
+async function findValidHeadImage(images, minWidth = 200, minHeight = 200) {
+  console.log(`🔍 开始查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`);
+  
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    console.log(`📸 检查第 ${i + 1} 张图片...`);
+    
+    const validationResult = await isValidHeadImage(image.src, minWidth, minHeight);
+    
+    if (validationResult.isValid) {
+      console.log(`✅ 找到符合要求的头图: 索引 ${i}, 尺寸 ${validationResult.dimensions.width}x${validationResult.dimensions.height}`);
+      return {
+        image,
+        index: i,
+        dimensions: validationResult.dimensions
+      };
+    } else {
+      console.log(`❌ 第 ${i + 1} 张图片不符合尺寸要求`);
+    }
+  }
+  
+  console.log('❌ 未找到符合尺寸要求的头图');
+  return null;
+}
+
 // 🔥 新增：处理头图上传
 async function processHeadImage(article, advancedSettings) {
   console.log('🖼️ 开始处理头图...');
@@ -1046,16 +1497,55 @@ async function processHeadImage(article, advancedSettings) {
     return article;
   }
   
-  // 获取头图配置
-  const headImgIndex = advancedSettings.headImgIndex || 0; // 默认使用第一张图片
-  const targetImage = article.images[headImgIndex];
+  // 🔥 新增：根据尺寸要求查找合适的头图
+  const minWidth = 200;  // 最小宽度
+  const minHeight = 200; // 最小高度
   
-  if (!targetImage) {
-    console.log(`⚠️ 无法找到索引为 ${headImgIndex} 的图片，跳过头图处理`);
-    return article;
+  console.log(`🎯 查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`);
+  
+  let targetImage;
+  let targetIndex;
+  let imageDimensions;
+  
+  // 如果指定了头图索引，先检查该索引的图片
+  if (advancedSettings.headImgIndex !== undefined && advancedSettings.headImgIndex >= 0) {
+    const specifiedIndex = advancedSettings.headImgIndex;
+    const specifiedImage = article.images[specifiedIndex];
+    
+    if (specifiedImage) {
+      console.log(`🎯 检查指定的头图索引 ${specifiedIndex}...`);
+      const validationResult = await isValidHeadImage(specifiedImage.src, minWidth, minHeight);
+      
+      if (validationResult.isValid) {
+        targetImage = specifiedImage;
+        targetIndex = specifiedIndex;
+        imageDimensions = validationResult.dimensions;
+        console.log(`✅ 指定索引的图片符合要求: ${imageDimensions.width}x${imageDimensions.height}`);
+      } else {
+        console.log(`❌ 指定索引的图片不符合尺寸要求，将搜索其他图片...`);
+      }
+    }
   }
   
-  console.log(`🎯 选择第 ${headImgIndex + 1} 张图片作为头图: ${targetImage.src.substring(0, 60)}...`);
+  // 如果指定索引的图片不符合要求，或者没有指定索引，则搜索所有图片
+  if (!targetImage) {
+    const validHeadImageResult = await findValidHeadImage(article.images, minWidth, minHeight);
+    
+    if (validHeadImageResult) {
+      targetImage = validHeadImageResult.image;
+      targetIndex = validHeadImageResult.index;
+      imageDimensions = validHeadImageResult.dimensions;
+    } else {
+      console.log('⚠️ 没有找到符合尺寸要求的头图，跳过头图处理');
+      return {
+        ...article,
+        headImageError: `未找到符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`
+      };
+    }
+  }
+  
+  console.log(`🎯 选择第 ${targetIndex + 1} 张图片作为头图: ${targetImage.src.substring(0, 60)}...`);
+  console.log(`📏 头图尺寸: ${imageDimensions.width}x${imageDimensions.height}`);
   
   try {
     // 验证图片URL是否有效
@@ -1065,6 +1555,11 @@ async function processHeadImage(article, advancedSettings) {
     
     // 分析图片信息
     const imageInfo = await analyzeImageInfo(targetImage.src);
+    
+    // 添加尺寸信息到imageInfo
+    imageInfo.width = imageDimensions.width;
+    imageInfo.height = imageDimensions.height;
+    imageInfo.aspectRatio = imageDimensions.aspectRatio;
     
     // 下载图片
     const tab = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1098,12 +1593,20 @@ async function processHeadImage(article, advancedSettings) {
     
     const uploadedFile = uploadResult[0];
     console.log(`✨ 头图上传成功: ${uploadedFile.name} (ID: ${uploadedFile.id})`);
+    console.log(`📏 头图最终尺寸: ${imageDimensions.width}x${imageDimensions.height}`);
+    
+    // 初始化 allImageIds 数组，确保头图ID包含在其中
+    const allImageIds = article.allImageIds || [];
+    if (!allImageIds.includes(uploadedFile.id)) {
+      allImageIds.unshift(uploadedFile.id); // 将头图ID放在数组第一位
+    }
     
     // 返回包含头图信息的文章对象
     return {
       ...article,
       headImageId: uploadedFile.id,
       headImageUrl: uploadedFile.url,
+      allImageIds: allImageIds,
       headImageInfo: {
         id: uploadedFile.id,
         url: uploadedFile.url,
@@ -1113,6 +1616,8 @@ async function processHeadImage(article, advancedSettings) {
         width: uploadedFile.width,
         height: uploadedFile.height,
         originalUrl: targetImage.src,
+        originalDimensions: imageDimensions,
+        selectedIndex: targetIndex,
         uploadedAt: new Date().toISOString()
       }
     };

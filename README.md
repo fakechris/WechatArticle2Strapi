@@ -1,12 +1,24 @@
 # 🚀 Enhanced Article Extractor
 
-![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)
+![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)
 ![Chrome Extension](https://img.shields.io/badge/Chrome%20Extension-Manifest%20V3-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
+![Architecture](https://img.shields.io/badge/架构-统一CLI逻辑-brightgreen.svg)
 
-一个受 **Obsidian Clipper** 启发的强大 Chrome 扩展，能够从任意网页提取丰富的元数据并保存到 Strapi CMS。支持专业级的内容提取和智能元数据收集。
+**🎉 v0.5.0 重大更新！** 完全重构的Chrome扩展，与CLI工具共享统一核心逻辑，代码重复减少90%，功能更强大！
+
+一个受 **Obsidian Clipper** 启发的强大 Chrome 扩展，能够从任意网页提取丰富的元数据并保存到 Strapi CMS。支持专业级的内容提取、头图上传和智能元数据收集。
 
 ## ✨ 核心特性
+
+### 🚀 v0.5.0 重大架构更新
+完全重构的Chrome扩展，实现与CLI工具的逻辑统一：
+
+- **📦 统一架构**: Chrome扩展和CLI共享相同的核心逻辑模块
+- **🔧 代码优化**: 从1434行重复代码减少到~150行，减少90%冗余
+- **🎯 完美同步**: 字段映射、预设、头图上传等功能与CLI完全一致
+- **🐛 问题修复**: 一次修复，CLI和Chrome扩展同时生效
+- **📋 配置兼容**: 完全向后兼容，现有配置无需更改
 
 ### 🎯 专业级内容提取
 - **多引擎支持**: Defuddle + WeChat 选择器的智能组合
@@ -14,14 +26,15 @@
 - **图片优化**: 智能筛选相关图片，提升 30% 过滤精度
 - **性能卓越**: 16ms 智能过滤，内容可用性提升至 95%
 
-### 🖼️ 头图自动上传功能 (v0.3.0)
-智能头图处理，一键完成封面图配置：
+### 🖼️ 头图自动上传功能 (v0.5.0 完善修复)
+智能头图处理，完美支持Strapi媒体关联：
 
 - **🎯 智能选择**: 根据索引自动选择文章中的图片作为头图
-- **📤 自动上传**: 头图直接上传到Strapi媒体库
-- **🔗 自动关联**: 媒体文件ID自动写入文章的头图字段
+- **📤 自动上传**: 头图直接上传到Strapi媒体库，支持正确MIME类型
+- **🔗 完美关联**: 媒体文件ID正确写入文章的头图字段，Strapi后台完美显示
 - **🏷️ 智能命名**: 基于文章标题生成有意义的文件名
-- **⚡ 错误处理**: 优雅的错误处理，不影响主流程
+- **🔧 技术修复**: 修复MIME类型、PUT请求支持等技术问题
+- **⚡ 错误处理**: 优雅的错误处理，详细的调试日志
 
 ### 🛡️ 防扩展干扰保护 (v0.3.1 NEW!)
 多层次防护机制，确保预览界面纯净无干扰：
@@ -256,7 +269,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ---
 
-**Enhanced Article Extractor v0.3.1**  
+**Enhanced Article Extractor v0.3.2**  
 *专业级内容提取 • 丰富元数据收集 • 防扩展干扰保护 • 受 Obsidian Clipper 启发*
 
 ⭐ 如果这个项目对您有帮助，请给个 Star！

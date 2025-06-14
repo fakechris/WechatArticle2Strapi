@@ -1,1177 +1,551 @@
-import Defuddle from 'defuddle';
+/**
+ * Chrome Extension Content Script - 简化测试版
+ * 先恢复基础功能，然后逐步升级到统一架构
+ */
 
-// Add debug information to verify Defuddle is loaded
-console.log('Defuddle imported:', typeof Defuddle);
-console.log('Defuddle class:', Defuddle);
+console.log('🚀 Content Script加载开始');
+console.log('🌐 当前URL:', window.location.href);
+console.log('📄 DOM状态:', document.readyState);
 
-// 生成预览用的简化slug
-function generatePreviewSlug(title) {
-  if (!title || typeof title !== 'string') return '';
-  
-  console.log('🔧 生成预览slug - 标题:', title);
-  
-  // 简化的中文转拼音映射
-  const pinyinMap = {
-    // 常用科技词汇
-    '技': 'ji', '术': 'shu', '人': 'ren', '工': 'gong', '智': 'zhi', '能': 'neng',
-    '数': 'shu', '据': 'ju', '分': 'fen', '析': 'xi', '系': 'xi', '统': 'tong',
-    '开': 'kai', '发': 'fa', '程': 'cheng', '序': 'xu', '网': 'wang', '站': 'zhan',
-    '应': 'ying', '用': 'yong', '软': 'ruan', '件': 'jian', '服': 'fu', '务': 'wu',
-    '前': 'qian', '端': 'duan', '后': 'hou', '库': 'ku', '框': 'kuang', '架': 'jia',
-    '算': 'suan', '法': 'fa', '机': 'ji', '器': 'qi', '学': 'xue', '习': 'xi',
-    '深': 'shen', '度': 'du', '神': 'shen', '经': 'jing', '络': 'luo',
-    '模': 'mo', '型': 'xing', '训': 'xun', '练': 'lian',
-    
-    // 常用字
-    '大': 'da', '小': 'xiao', '新': 'xin', '老': 'lao', '好': 'hao', 
-    '中': 'zhong', '国': 'guo', '的': 'de', '是': 'shi', '在': 'zai',
-    '有': 'you', '和': 'he', '与': 'yu', '来': 'lai', '去': 'qu',
-    '上': 'shang', '下': 'xia', '会': 'hui', '可': 'ke', '以': 'yi',
-    '要': 'yao', '说': 'shuo', '看': 'kan', '做': 'zuo', '想': 'xiang',
-    
-    // 故障相关
-    '故': 'gu', '障': 'zhang', '问': 'wen', '题': 'ti', '解': 'jie', '决': 'jue',
-    '修': 'xiu', '复': 'fu', '错': 'cuo', '误': 'wu', '失': 'shi', '败': 'bai',
-    
-    // 云服务相关
-    '云': 'yun', '服': 'fu', '务': 'wu', '阿': 'a', '里': 'li', '域': 'yu',
-    '名': 'ming', '核': 'he', '心': 'xin', '被': 'bei', '拖': 'tuo', '走': 'zou'
-  };
-  
-  const slug = title
-    .trim()
-    .substring(0, 50) // 限制长度
-    .toLowerCase()
-    // 转换中文字符为拼音
-    .replace(/[\u4e00-\u9fa5]/g, char => pinyinMap[char] || 'ch')
-    // 处理标点和特殊字符
-    .replace(/[，。！？；：""''（）【】《》、]/g, '-')
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .substring(0, 30);
-  
-  // 添加短时间戳确保唯一性
-  const timestamp = Date.now().toString().slice(-4);
-  const finalSlug = slug ? `${slug}-${timestamp}` : `article-${timestamp}`;
-  
-  console.log('🔧 生成预览slug - 结果:', finalSlug);
-  return finalSlug;
-}
-
-// 🛡️ 其他Extension清理器
-function cleanupOtherExtensions() {
-  let removedCount = 0;
-  
-  // 1. 移除其他Extension的图片元素
-  const extensionImages = document.querySelectorAll('img[src*="chrome-extension://"], img[src*="moz-extension://"], img[src*="extension://"]');
-  extensionImages.forEach(img => {
-    console.log('🗑️ Removing other extension image:', img.src);
-    img.remove();
-    removedCount++;
-  });
-  
-  // 2. 移除其他Extension注入的容器元素
-  const extensionContainers = document.querySelectorAll('[class*="chrome-extension"], [id*="chrome-extension"], [class*="extension"], [id*="extension"]');
-  extensionContainers.forEach(container => {
-    // 避免移除我们自己的元素
-    if (!container.closest('[data-enhanced-extractor]')) {
-      console.log('🗑️ Removing other extension container:', container.tagName, container.className, container.id);
-      container.remove();
-      removedCount++;
-    }
-  });
-  
-  // 3. 移除其他Extension的Shadow DOM
-  document.querySelectorAll('*').forEach(el => {
-    if (el.shadowRoot) {
-      const shadowImages = el.shadowRoot.querySelectorAll('img[src*="chrome-extension://"], img[src*="moz-extension://"]');
-      if (shadowImages.length > 0) {
-        console.log('🗑️ Removing shadow DOM extension images:', shadowImages.length);
-        shadowImages.forEach(img => img.remove());
-        removedCount += shadowImages.length;
-      }
-    }
-  });
-  
-  // 4. 移除具有extension URL背景的元素
-  document.querySelectorAll('*').forEach(el => {
-    const computedStyle = window.getComputedStyle(el);
-    const backgroundImage = computedStyle.backgroundImage;
-    if (backgroundImage && (backgroundImage.includes('chrome-extension://') || backgroundImage.includes('moz-extension://'))) {
-      console.log('🗑️ Removing element with extension background:', backgroundImage);
-      el.remove();
-      removedCount++;
-    }
-  });
-  
-  if (removedCount > 0) {
-    console.log(`🛡️ Extension cleanup: removed ${removedCount} other extension elements`);
-  }
-  
-  return removedCount;
-}
-
-// 定期清理其他Extension注入（因为有些Extension会动态注入）
-function startExtensionCleanupWatcher() {
-  // 等待DOM准备好
-  const initializeWatcher = () => {
-    // 确保document.body存在
-    if (!document.body) {
-      // 如果body还不存在，等待一下再试
-      setTimeout(initializeWatcher, 50);
-      return;
-    }
-    
-    // 立即执行一次清理
-    cleanupOtherExtensions();
-    
-    // 使用MutationObserver监控DOM变化
-    const observer = new MutationObserver((mutations) => {
-      let needsCleanup = false;
-      
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'childList') {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              // 检查新添加的节点是否包含extension内容
-              const hasExtensionContent = 
-                node.querySelector && (
-                  node.querySelector('img[src*="chrome-extension://"]') ||
-                  node.querySelector('img[src*="moz-extension://"]') ||
-                  node.matches('[class*="extension"]') ||
-                  node.matches('[id*="extension"]')
-                );
-              
-              if (hasExtensionContent) {
-                needsCleanup = true;
-              }
-            }
-          });
-        }
-      });
-      
-      if (needsCleanup) {
-        console.log('🔍 Detected extension content injection, cleaning up...');
-        setTimeout(() => cleanupOtherExtensions(), 100); // 延迟一点执行清理
-      }
-    });
-    
-    // 开始观察
-    try {
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      console.log('🛡️ Extension cleanup watcher started');
-    } catch (error) {
-      console.error('🚨 Failed to start extension cleanup watcher:', error);
-      // 作为备用方案，使用定时器清理
-      setInterval(cleanupOtherExtensions, 2000);
-      console.log('🛡️ Using fallback timer-based cleanup');
-    }
-  };
-  
-  // 如果DOM已经准备好，立即初始化；否则等待
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeWatcher);
-  } else {
-    initializeWatcher();
-  }
-}
-
-// 规则引擎 - DOM清理规则
-const DEFAULT_CLEANUP_RULES = [
-  // 微信特定的清理规则（只在微信域名生效）
-  { type: 'id', value: 'content_bottom_area', description: '微信底部推荐区域', domains: ['mp.weixin.qq.com'] },
-  { type: 'id', value: 'js_article_comment', description: '微信评论区域', domains: ['mp.weixin.qq.com'] },
-  { type: 'id', value: 'js_tags', description: '微信标签区域', domains: ['mp.weixin.qq.com'] },
-  { type: 'class', value: 'rich_media_tool', description: '微信工具栏', domains: ['mp.weixin.qq.com'] },
-  { type: 'class', value: 'share_notice', description: '微信分享提示', domains: ['mp.weixin.qq.com'] },
-  { type: 'class', value: 'qr_code_pc', description: '微信二维码', domains: ['mp.weixin.qq.com'] },
-  { type: 'class', value: 'reward_area', description: '微信打赏区域', domains: ['mp.weixin.qq.com'] },
-  { type: 'class', value: 'promotion_area', description: '推广区域', domains: ['mp.weixin.qq.com'] },
-  
-  // 知乎特定规则
-  { type: 'class', value: 'RichContent-actions', description: '知乎操作栏', domains: ['zhuanlan.zhihu.com', 'www.zhihu.com'] },
-  { type: 'class', value: 'ContentItem-actions', description: '知乎内容操作', domains: ['zhuanlan.zhihu.com', 'www.zhihu.com'] },
-  { type: 'class', value: 'Recommendations-Main', description: '知乎推荐', domains: ['zhuanlan.zhihu.com', 'www.zhihu.com'] },
-  
-  // 简书特定规则
-  { type: 'class', value: 'follow-detail', description: '简书关注详情', domains: ['www.jianshu.com'] },
-  { type: 'class', value: 'recommendation', description: '简书推荐', domains: ['www.jianshu.com'] },
-  
-  // CSDN特定规则
-  { type: 'class', value: 'tool-box', description: 'CSDN工具箱', domains: ['blog.csdn.net'] },
-  { type: 'class', value: 'recommend-box', description: 'CSDN推荐', domains: ['blog.csdn.net'] },
-  
-  // 通用广告和噪音清理（适用于所有网站）
-  { type: 'class', value: 'advertisement', description: '广告区域' },
-  { type: 'class', value: 'ads', description: '广告' },
-  { type: 'class', value: 'banner', description: '横幅广告' },
-  { type: 'class', value: 'sidebar', description: '侧边栏' },
-  { type: 'class', value: 'footer', description: '页脚' },
-  { type: 'class', value: 'navigation', description: '导航栏' },
-  { type: 'class', value: 'nav', description: '导航' },
-  { type: 'class', value: 'menu', description: '菜单' },
-  { type: 'class', value: 'social-share', description: '社交分享' },
-  { type: 'class', value: 'comments', description: '评论区' },
-  { type: 'class', value: 'related-articles', description: '相关文章' },
-  
-  // 标签级别清理（适用于所有网站）
-  { type: 'tag', value: 'script', description: '脚本标签' },
-  { type: 'tag', value: 'style', description: '样式标签' },
-  { type: 'tag', value: 'noscript', description: 'NoScript标签' }
-];
-
-// 检查域名是否匹配规则
-function isDomainMatched(rule, currentHostname) {
-  // 如果规则没有指定domains，则适用于所有域名
-  if (!rule.domains || !Array.isArray(rule.domains) || rule.domains.length === 0) {
-    return true;
-  }
-  
-  // 检查当前hostname是否匹配任何指定域名
-  return rule.domains.some(domain => {
-    // 精确匹配
-    if (currentHostname === domain) {
-      return true;
-    }
-    // 支持通配符匹配（例如: *.zhihu.com）
-    if (domain.startsWith('*.')) {
-      const baseDomain = domain.substring(2);
-      return currentHostname.endsWith('.' + baseDomain) || currentHostname === baseDomain;
-    }
-    return false;
-  });
-}
-
-// 应用DOM清理规则
-function applyCleanupRules(targetDocument, rules = DEFAULT_CLEANUP_RULES) {
-  const currentHostname = window.location.hostname;
-  console.log('🧹 Applying DOM cleanup rules:', rules.length, 'for domain:', currentHostname);
-  
-  let removedCount = 0;
-  let appliedRules = 0;
-  let skippedRules = 0;
-  
-  rules.forEach(rule => {
-    try {
-      // 检查域名匹配
-      if (!isDomainMatched(rule, currentHostname)) {
-        skippedRules++;
-        console.log(`⏭️ Skipping rule for different domain: ${rule.description} (domains: ${rule.domains?.join(', ') || 'all'})`);
-        return;
-      }
-      
-      appliedRules++;
-      let elements = [];
-      
-      switch (rule.type) {
-        case 'id':
-          const elementById = targetDocument.getElementById(rule.value);
-          if (elementById) elements = [elementById];
-          break;
-          
-        case 'class':
-          elements = Array.from(targetDocument.getElementsByClassName(rule.value));
-          break;
-          
-        case 'tag':
-          elements = Array.from(targetDocument.getElementsByTagName(rule.value));
-          break;
-          
-        case 'selector':
-          elements = Array.from(targetDocument.querySelectorAll(rule.value));
-          break;
-          
-        case 'regex-class':
-          // 通过正则表达式匹配class名
-          const allElements = targetDocument.querySelectorAll('[class]');
-          const regex = new RegExp(rule.value, 'i');
-          elements = Array.from(allElements).filter(el => 
-            Array.from(el.classList).some(className => regex.test(className))
-          );
-          break;
-      }
-      
-      if (elements.length > 0) {
-        const domainInfo = rule.domains ? ` [${rule.domains.join(', ')}]` : ' [all domains]';
-        console.log(`🗑️ Removing ${elements.length} elements for rule: ${rule.description} (${rule.type}: ${rule.value})${domainInfo}`);
-        elements.forEach(element => {
-          element.remove();
-          removedCount++;
-        });
-      }
-    } catch (error) {
-      console.warn(`❌ Error applying cleanup rule ${rule.type}:${rule.value}:`, error);
-    }
-  });
-  
-  console.log(`✅ DOM cleanup completed for ${currentHostname}:`);
-  console.log(`   📊 Applied rules: ${appliedRules}`);
-  console.log(`   ⏭️ Skipped rules: ${skippedRules}`);
-  console.log(`   🗑️ Removed elements: ${removedCount}`);
-  return removedCount;
-}
-
-// Enhanced content extraction using Defuddle for superior content filtering
-async function extractArticle() {
-  try {
-    // Check if we're on a WeChat article page
-    const isWeChatArticle = window.location.hostname === 'mp.weixin.qq.com';
-    
-    console.log('Starting extraction. WeChat article:', isWeChatArticle);
-    
-    // Apply cleanup rules BEFORE extraction for better results
-    console.log('🚀 Starting pre-processing with cleanup rules...');
-    
-    // Load custom cleanup rules from storage
-    let cleanupRules = DEFAULT_CLEANUP_RULES;
-    try {
-      const storage = await chrome.storage.sync.get(['customCleanupRules', 'enableCleanupRules']);
-      if (storage.enableCleanupRules !== false) { // enabled by default
-        if (storage.customCleanupRules && Array.isArray(storage.customCleanupRules)) {
-          // Merge custom rules with default rules
-          cleanupRules = [...DEFAULT_CLEANUP_RULES, ...storage.customCleanupRules];
-          console.log('📝 Loaded custom cleanup rules:', storage.customCleanupRules.length);
-        }
-      } else {
-        console.log('⏸️ Cleanup rules disabled by user');
-        cleanupRules = [];
-      }
-    } catch (error) {
-      console.warn('⚠️ Could not load custom cleanup rules, using defaults:', error);
-    }
-    
-    const removedElements = applyCleanupRules(document, cleanupRules);
-    console.log(`🎯 Pre-processing complete. Removed ${removedElements} noise elements.`);
-    
-    if (isWeChatArticle) {
-      // Use enhanced WeChat-specific extraction
-      return extractWeChatArticle();
-    } else {
-      // Use Defuddle for general web content extraction
-      return extractGeneralContent();
-    }
-  } catch (error) {
-    console.error('Content extraction failed:', error);
-    // Fallback to basic extraction
-    return extractBasicContent();
-  }
-}
-
-function extractWeChatArticle() {
-  // Enhanced WeChat extraction that first tries Defuddle, then falls back to specific selectors
-  console.log('Extracting WeChat article with Defuddle enhancement');
-  
-  try {
-    // Try Defuddle first even for WeChat articles to get better content filtering
-    console.log('Trying Defuddle for WeChat article...');
-    const defuddle = new Defuddle(document, {
-      debug: true, // Enable debug for troubleshooting
-      removeExactSelectors: true,
-      removePartialSelectors: true
-    });
-    
-    const result = defuddle.parse();
-    console.log('WeChat Defuddle result:', result);
-    
-    // If Defuddle found good content, enhance it with WeChat-specific metadata
-    if (result && result.content && result.content.length > 100) {
-      console.log('Using Defuddle result for WeChat, content length:', result.content.length);
-      return enhanceWithWeChatMetadata(result);
-    } else {
-      console.log('Defuddle result not good enough for WeChat, falling back');
-    }
-  } catch (error) {
-    console.log('Defuddle extraction failed for WeChat, falling back to selectors:', error);
-  }
-  
-  // Fallback to original WeChat selectors if Defuddle didn't work well
-  console.log('Using WeChat selector fallback');
-  const titleEl = document.querySelector('#activity-name') || 
-                  document.querySelector('.rich_media_title') ||
-                  document.querySelector('h1');
-  
-  const authorEl = document.querySelector('#js_name') ||
-                   document.querySelector('.rich_media_meta_text') ||
-                   document.querySelector('.account_nickname_inner');
-  
-  const publishTimeEl = document.querySelector('#publish_time') ||
-                        document.querySelector('.rich_media_meta_text');
-  
-  const contentEl = document.querySelector('#js_content') ||
-                    document.querySelector('.rich_media_content');
-  
-  const digestEl = document.querySelector('.rich_media_meta_text') ||
-                   document.querySelector('meta[name="description"]');
-  
-  // Extract images
-  const images = [];
-  if (contentEl) {
-    const imgElements = contentEl.querySelectorAll('img[data-src], img[src]');
-    console.log(`🖼️ 从微信选择器方式找到 ${imgElements.length} 个图片元素`);
-    
-    imgElements.forEach((img, index) => {
-      const src = img.getAttribute('data-src') || img.src;
-      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
-      if (isValidImageUrl(src)) {
-        console.log(`✅ 添加有效图片: ${src}`);
-        images.push({
-          src: src,
-          alt: img.alt || '',
-          index: index
-        });
-      } else {
-        console.log(`❌ 跳过无效图片: ${src}`);
-      }
-    });
-  }
-
-  const articleTitle = titleEl ? titleEl.innerText.trim() : '';
-  const articleSlug = articleTitle ? generatePreviewSlug(articleTitle) : '';
-  
-  return {
-    title: articleTitle,
-    author: authorEl ? authorEl.innerText.trim() : '',
-    publishTime: publishTimeEl ? publishTimeEl.innerText.trim() : '',
-    content: contentEl ? contentEl.innerHTML : '',
-    digest: digestEl ? (digestEl.content || digestEl.innerText || '').trim() : '',
-    images: images,
-    url: window.location.href,
-    slug: articleSlug,
-    timestamp: Date.now(),
-    extractionMethod: 'wechat-fallback'
-  };
-}
-
-function enhanceWithWeChatMetadata(defuddleResult) {
-  // Get WeChat-specific metadata and combine with Defuddle's cleaned content
-  const authorEl = document.querySelector('#js_name') ||
-                   document.querySelector('.rich_media_meta_text') ||
-                   document.querySelector('.account_nickname_inner');
-  
-  const publishTimeEl = document.querySelector('#publish_time') ||
-                        document.querySelector('.rich_media_meta_text');
-  
-  const digestEl = document.querySelector('.rich_media_meta_text') ||
-                   document.querySelector('meta[name="description"]');
-
-  // Extract images from the cleaned content
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = defuddleResult.content;
-  const imgElements = tempDiv.querySelectorAll('img');
-  const images = [];
-  const seenUrls = new Set(); // 用于去重
-  
-  console.log(`🖼️ 从Defuddle清理的内容中找到 ${imgElements.length} 个图片元素`);
-  
-  imgElements.forEach((img, index) => {
-    const src = img.getAttribute('data-src') || img.src;
-    console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
-    
-    if (isValidImageUrl(src)) {
-      // 检查URL是否已经存在
-      if (seenUrls.has(src)) {
-        console.log(`🔄 跳过重复图片: ${src}`);
-        return;
-      }
-      
-      seenUrls.add(src);
-      console.log(`✅ 添加有效图片: ${src}`);
-      images.push({
-        src: src,
-        alt: img.alt || '',
-        index: index
-      });
-    } else {
-      console.log(`❌ 跳过无效图片: ${src}`);
-    }
-  });
-  
-
-  
-  console.log(`📊 图片去重完成，最终收集到 ${images.length} 个唯一图片`);
-
-  const articleTitle = defuddleResult.title || '';
-  const articleSlug = articleTitle ? generatePreviewSlug(articleTitle) : '';
-  
-  return {
-    title: articleTitle,
-    author: defuddleResult.author || (authorEl ? authorEl.innerText.trim() : ''),
-    publishTime: defuddleResult.published || (publishTimeEl ? publishTimeEl.innerText.trim() : ''),
-    content: defuddleResult.content || '',
-    digest: defuddleResult.description || (digestEl ? (digestEl.content || digestEl.innerText || '').trim() : ''),
-    images: images,
-    url: defuddleResult.url || window.location.href,
-    slug: articleSlug,
-    timestamp: Date.now(),
-    extractionMethod: 'defuddle-enhanced-wechat',
-    wordCount: defuddleResult.wordCount || 0,
-    parseTime: defuddleResult.parseTime || 0,
-    domain: defuddleResult.domain || '',
-    site: defuddleResult.site || ''
-  };
-}
-
-function extractGeneralContent() {
-  // Use Defuddle for general web content extraction
-  console.log('Extracting general content with Defuddle');
-  console.log('Defuddle constructor available:', typeof Defuddle);
-  
-  try {
-    console.log('Creating Defuddle instance...');
-    const defuddle = new Defuddle(document, {
-      debug: true, // Enable debug for troubleshooting
-      removeExactSelectors: true,
-      removePartialSelectors: true
-    });
-    
-    console.log('Defuddle instance created, calling parse...');
-    const result = defuddle.parse();
-    console.log('Defuddle parse result:', result);
-    console.log('Content length:', result?.content?.length || 0);
-    
-    if (!result || !result.content || result.content.length < 50) {
-      console.log('Defuddle extraction yielded poor results, falling back');
-      console.log('Result details:', {
-        hasResult: !!result,
-        hasContent: !!result?.content,
-        contentLength: result?.content?.length || 0
-      });
-      return extractBasicContent();
-    }
-    
-    console.log('Defuddle extraction successful, processing images...');
-    
-    // Extract images from the cleaned content
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = result.content;
-    const imgElements = tempDiv.querySelectorAll('img');
-    const images = [];
-    const seenUrls = new Set(); // 用于去重
-    
-    console.log(`🖼️ 从Defuddle通用内容中找到 ${imgElements.length} 个图片元素`);
-    
-    imgElements.forEach((img, index) => {
-      const src = img.src;
-      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
-      
-      if (isValidImageUrl(src)) {
-        // 检查URL是否已经存在
-        if (seenUrls.has(src)) {
-          console.log(`🔄 跳过重复图片: ${src}`);
-          return;
-        }
-        
-        seenUrls.add(src);
-        console.log(`✅ 添加有效图片: ${src}`);
-        images.push({
-          src: src,
-          alt: img.alt || '',
-          index: index
-        });
-      } else {
-        console.log(`❌ 跳过无效图片: ${src}`);
-      }
-    });
-    
-    console.log(`📊 通用内容图片去重完成，最终收集到 ${images.length} 个唯一图片`);
-    
-    const articleTitle = result.title || document.title || '';
-    const articleSlug = articleTitle ? generatePreviewSlug(articleTitle) : '';
-    
-    const finalResult = {
-      title: articleTitle,
-      author: result.author || '',
-      publishTime: result.published || '',
-      content: result.content || '',
-      digest: result.description || '',
-      images: images,
-      url: result.url || window.location.href,
-      slug: articleSlug,
-      timestamp: Date.now(),
-      extractionMethod: 'defuddle',
-      wordCount: result.wordCount || 0,
-      parseTime: result.parseTime || 0,
-      domain: result.domain || '',
-      site: result.site || ''
-    };
-    
-    console.log('Final Defuddle result:', {
-      method: finalResult.extractionMethod,
-      titleLength: finalResult.title.length,
-      contentLength: finalResult.content.length,
-      imageCount: finalResult.images.length
-    });
-    
-    return finalResult;
-  } catch (error) {
-    console.error('Defuddle extraction failed:', error);
-    console.error('Error stack:', error.stack);
-    return extractBasicContent();
-  }
-}
-
-function extractBasicContent() {
-  // Basic fallback extraction for when Defuddle is not available or fails
-  console.log('Using basic content extraction fallback');
-  
-  // Try to find the main content area
-  const contentSelectors = [
-    'article',
-    'main',
-    '.content',
-    '.post-content',
-    '.article-content',
-    '.entry-content',
-    '#content',
-    '.main-content',
-    '[role="main"]'
-  ];
-  
-  let contentEl = null;
-  for (const selector of contentSelectors) {
-    contentEl = document.querySelector(selector);
-    if (contentEl && contentEl.innerText.length > 200) {
-      console.log('Found content with selector:', selector);
-      break;
-    }
-  }
-  
-  // If no good content area found, try to get the largest text block
-  if (!contentEl) {
-    console.log('No good content selector found, trying largest text block...');
-    const allDivs = document.querySelectorAll('div, section, article');
-    let maxLength = 0;
-    for (const div of allDivs) {
-      const textLength = div.innerText ? div.innerText.length : 0;
-      if (textLength > maxLength && textLength > 200) {
-        maxLength = textLength;
-        contentEl = div;
-      }
-    }
-    console.log('Largest text block length:', maxLength);
-  }
-  
-  // Get images from the content area
-  const images = [];
-  const seenUrls = new Set(); // 用于去重
-  
-  if (contentEl) {
-    const imgElements = contentEl.querySelectorAll('img');
-    console.log(`🖼️ 从基础内容提取中找到 ${imgElements.length} 个图片元素`);
-    
-    imgElements.forEach((img, index) => {
-      const src = img.src;
-      console.log(`🔍 检查图片 ${index + 1}: ${src?.substring(0, 80)}...`);
-      
-      if (isValidImageUrl(src)) {
-        // 检查URL是否已经存在
-        if (seenUrls.has(src)) {
-          console.log(`🔄 跳过重复图片: ${src}`);
-          return;
-        }
-        
-        seenUrls.add(src);
-        console.log(`✅ 添加有效图片: ${src}`);
-        images.push({
-          src: src,
-          alt: img.alt || '',
-          index: index
-        });
-      } else {
-        console.log(`❌ 跳过无效图片: ${src}`);
-      }
-    });
-  }
-  
-  console.log(`📊 基础内容图片去重完成，最终收集到 ${images.length} 个唯一图片`);
-  
-  // Get title
-  const title = document.querySelector('h1')?.innerText?.trim() || 
-                document.title || 
-                '';
-  
-  // Get meta description
-  const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
-                   document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
-                   '';
-  
-  const articleSlug = title ? generatePreviewSlug(title) : '';
-  
-  const basicResult = {
-    title: title,
-    author: '',
-    publishTime: '',
-    content: contentEl ? contentEl.innerHTML : '',
-    digest: metaDesc,
-    images: images,
-    url: window.location.href,
-    slug: articleSlug,
-    timestamp: Date.now(),
-    extractionMethod: 'basic-fallback'
-  };
-  
-  console.log('Basic extraction result:', {
-    method: basicResult.extractionMethod,
-    titleLength: basicResult.title.length,
-    contentLength: basicResult.content.length,
-    imageCount: basicResult.images.length
-  });
-  
-  return basicResult;
-}
-
-// Enhanced metadata extraction inspired by Obsidian Clipper
-function extractEnhancedMetadata(document) {
-  console.log('🔍 Extracting enhanced metadata...');
-  
-  const metadata = {
-    title: '',
-    source: window.location.href,
-    author: '',
-    published: '',
-    created: new Date().toISOString(),
-    description: '',
-    siteName: '',
-    canonical: '',
-    language: '',
-    tags: [],
-    readingTime: 0
-  };
-
-  // Title extraction (multiple sources)
-  metadata.title = 
-    document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
-    document.querySelector('meta[name="twitter:title"]')?.getAttribute('content') ||
-    document.querySelector('title')?.textContent ||
-    document.querySelector('h1')?.textContent ||
-    '';
-
-  // Author extraction (comprehensive approach like Obsidian Clipper)
-  const authorSelectors = [
-    'meta[name="author"]',
-    'meta[property="article:author"]', 
-    'meta[property="og:article:author"]',
-    'meta[name="twitter:creator"]',
-    '[rel="author"]',
-    '.byline',
-    '.author',
-    '.writer',
-    '.post-author',
-    '.article-author',
-    '[class*="author"]',
-    '[data-author]'
-  ];
-  
-  for (const selector of authorSelectors) {
-    const element = document.querySelector(selector);
-    if (element) {
-      if (element.tagName === 'META') {
-        metadata.author = element.getAttribute('content');
-      } else {
-        metadata.author = element.textContent?.trim();
-      }
-      if (metadata.author) break;
-    }
-  }
-
-  // WeChat specific author extraction
-  if (window.location.hostname === 'mp.weixin.qq.com') {
-    const wechatAuthor = document.querySelector('#js_name, .rich_media_meta_text, .account_nickname_inner');
-    if (wechatAuthor) {
-      metadata.author = wechatAuthor.textContent?.trim() || metadata.author;
-    }
-  }
-
-  // Published date extraction (like Obsidian Clipper)
-  const publishedSources = [
-    'meta[property="article:published_time"]',
-    'meta[property="og:article:published_time"]',
-    'meta[name="publish_date"]',
-    'meta[name="date"]',
-    'meta[name="DC.date"]',
-    'time[datetime]',
-    'time[pubdate]',
-    '[datetime]'
-  ];
-
-  for (const selector of publishedSources) {
-    const element = document.querySelector(selector);
-    if (element) {
-      let dateValue = element.getAttribute('content') || 
-                      element.getAttribute('datetime') || 
-                      element.textContent;
-      
-      if (dateValue) {
-        // Try to parse and format the date
-        try {
-          const date = new Date(dateValue);
-          if (!isNaN(date.getTime())) {
-            metadata.published = date.toISOString().split('T')[0]; // YYYY-MM-DD format
-            break;
-          }
-        } catch (e) {
-          console.warn('Failed to parse date:', dateValue);
-        }
-      }
-    }
-  }
-
-  // WeChat specific publish date
-  if (window.location.hostname === 'mp.weixin.qq.com') {
-    const wechatTime = document.querySelector('#publish_time, .rich_media_meta_text');
-    if (wechatTime && !metadata.published) {
-      const timeText = wechatTime.textContent?.trim();
-      if (timeText) {
-        try {
-          const date = new Date(timeText);
-          if (!isNaN(date.getTime())) {
-            metadata.published = date.toISOString().split('T')[0];
-          }
-        } catch (e) {
-          metadata.published = timeText; // Keep as text if parsing fails
-        }
-      }
-    }
-  }
-
-  // Description extraction
-  metadata.description = 
-    document.querySelector('meta[name="description"]')?.getAttribute('content') ||
-    document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
-    document.querySelector('meta[name="twitter:description"]')?.getAttribute('content') ||
-    '';
-
-  // WeChat specific description
-  if (window.location.hostname === 'mp.weixin.qq.com') {
-    const wechatDesc = document.querySelector('.rich_media_meta_text');
-    if (wechatDesc && !metadata.description) {
-      metadata.description = wechatDesc.textContent?.trim() || '';
-    }
-  }
-
-  // Site name
-  metadata.siteName = 
-    document.querySelector('meta[property="og:site_name"]')?.getAttribute('content') ||
-    document.querySelector('meta[name="application-name"]')?.getAttribute('content') ||
-    window.location.hostname;
-
-  // Canonical URL
-  metadata.canonical = 
-    document.querySelector('link[rel="canonical"]')?.getAttribute('href') ||
-    document.querySelector('meta[property="og:url"]')?.getAttribute('content') ||
-    window.location.href;
-
-  // Language
-  metadata.language = 
-    document.documentElement.lang ||
-    document.querySelector('meta[http-equiv="content-language"]')?.getAttribute('content') ||
-    'en';
-
-  // Keywords/Tags extraction
-  const keywordsEl = document.querySelector('meta[name="keywords"]');
-  if (keywordsEl) {
-    const keywords = keywordsEl.getAttribute('content');
-    if (keywords) {
-      metadata.tags = keywords.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-    }
-  }
-
-  // Article tags (additional sources)
-  const tagSelectors = [
-    '.tags a',
-    '.tag',
-    '.post-tags a', 
-    '.article-tags a',
-    '[rel="tag"]',
-    '.hashtag'
-  ];
-  
-  for (const selector of tagSelectors) {
-    const tagElements = document.querySelectorAll(selector);
-    if (tagElements.length > 0) {
-      const additionalTags = Array.from(tagElements)
-        .map(el => el.textContent?.trim())
-        .filter(tag => tag && tag.length > 0);
-      metadata.tags = [...new Set([...metadata.tags, ...additionalTags])];
-      break;
-    }
-  }
-
-  // Estimate reading time
-  const contentText = document.body.textContent || '';
-  const wordsPerMinute = 200; // Average reading speed
-  const wordCount = contentText.trim().split(/\s+/).length;
-  metadata.readingTime = Math.ceil(wordCount / wordsPerMinute);
-
-  // Clean and validate metadata
-  Object.keys(metadata).forEach(key => {
-    if (typeof metadata[key] === 'string') {
-      metadata[key] = metadata[key].trim();
-    }
-  });
-
-  console.log('✅ Enhanced metadata extracted:', {
-    title: metadata.title.substring(0, 50) + '...',
-    author: metadata.author,
-    published: metadata.published,
-    description: metadata.description.substring(0, 100) + '...',
-    siteName: metadata.siteName,
-    tagsCount: metadata.tags.length,
-    readingTime: metadata.readingTime
-  });
-
-  return metadata;
-}
-
-// Enhanced content extraction with metadata
-async function extractArticleWithEnhancedMetadata() {
-  try {
-    console.log('🚀 Starting enhanced extraction with metadata...');
-    
-    // First extract metadata
-    const metadata = extractEnhancedMetadata(document);
-    
-    // Then extract content using existing logic
-    const article = await extractArticle();
-    
-    // Merge metadata with article content
-    const enhancedArticle = {
-      ...article,
-      ...metadata,
-      // Preserve original fields but enhance with metadata
-      title: metadata.title || article.title,
-      author: metadata.author || article.author,
-      publishTime: metadata.published || article.publishTime,
-      digest: metadata.description || article.digest,
-      url: metadata.canonical || article.url,
-      
-      // Additional metadata fields
-      siteName: metadata.siteName,
-      language: metadata.language,
-      tags: metadata.tags,
-      readingTime: metadata.readingTime,
-      created: metadata.created,
-      
-      // Enhanced extraction indicator
-      extractionMethod: article.extractionMethod + '-enhanced-metadata'
-    };
-
-    console.log('🎯 Enhanced article with metadata:', {
-      title: enhancedArticle.title.substring(0, 50) + '...',
-      author: enhancedArticle.author,
-      published: enhancedArticle.publishTime,
-      siteName: enhancedArticle.siteName,
-      tagsCount: enhancedArticle.tags.length,
-      contentLength: enhancedArticle.content.length,
-      method: enhancedArticle.extractionMethod
-    });
-
-    return enhancedArticle;
-    
-  } catch (error) {
-    console.error('❌ Enhanced extraction failed:', error);
-    // Fallback to regular extraction
-    return await extractArticle();
-  }
-}
-
-async function downloadImage(imageUrl, options = {}) {
-  try {
-    console.log(`🖼️ 开始下载图片: ${imageUrl.substring(0, 80)}...`);
-    
-    // 添加防盗链headers
-    const response = await fetch(imageUrl, {
-      headers: {
-        'Referer': window.location.href,
-        'User-Agent': navigator.userAgent
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const blob = await response.blob();
-    console.log(`📦 图片下载成功: ${Math.round(blob.size / 1024)}KB`);
-    
-    // 验证是否为图片
-    if (!blob.type.startsWith('image/')) {
-      throw new Error(`文件类型错误: ${blob.type}, 期望图片类型`);
-    }
-    
-    // 如果启用压缩，处理图片
-    if (options.enableCompression) {
-      const compressedDataUrl = await compressImage(blob, options);
-      console.log(`🗜️ 图片压缩完成`);
-      return compressedDataUrl;
-    } else {
-      // 直接转换为data URL
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.readAsDataURL(blob);
-      });
-    }
-    
-  } catch (error) {
-    console.error(`❌ 图片下载失败 (${imageUrl}):`, error);
-    return null;
-  }
-}
-
-// 智能图片压缩函数
-async function compressImage(blob, options = {}) {
-  const {
-    quality = 0.8,
-    maxWidth = 1200,
-    maxHeight = 800,
-    format = 'image/jpeg'
-  } = options;
-  
-  return new Promise((resolve) => {
-    const img = new Image();
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    img.onload = () => {
-      // 计算新尺寸
-      let { width, height } = img;
-      
-      if (width > maxWidth || height > maxHeight) {
-        const ratio = Math.min(maxWidth / width, maxHeight / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-        console.log(`📏 调整图片尺寸: ${img.width}x${img.height} → ${width}x${height}`);
-      }
-      
-      // 设置canvas尺寸
-      canvas.width = width;
-      canvas.height = height;
-      
-      // 绘制图片
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      // 输出压缩后的图片
-      const compressedDataUrl = canvas.toDataURL(format, quality);
-      
-      // 计算压缩率
-      const originalSize = blob.size;
-      const compressedSize = Math.round(compressedDataUrl.length * 0.75); // base64大约比原始大33%
-      const compressionRatio = Math.round((1 - compressedSize / originalSize) * 100);
-      
-      console.log(`🎯 压缩统计: ${Math.round(originalSize/1024)}KB → ${Math.round(compressedSize/1024)}KB (压缩${compressionRatio}%)`);
-      
-      resolve(compressedDataUrl);
-    };
-    
-    img.onerror = () => {
-      console.warn('⚠️ 图片压缩失败，使用原图');
-      // 如果压缩失败，返回原图
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.readAsDataURL(blob);
-    };
-    
-    // 创建图片对象URL
-    img.src = URL.createObjectURL(blob);
-  });
-}
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'extract') {
-    console.log('Received extract request - using enhanced metadata extraction');
-    
-    // Use enhanced metadata extraction
-    extractArticleWithEnhancedMetadata().then(articleData => {
-      console.log('Extracted article data with enhanced metadata:', {
-        method: articleData.extractionMethod,
-        title: articleData.title,
-        author: articleData.author,
-        published: articleData.publishTime,
-        siteName: articleData.siteName,
-        contentLength: articleData.content ? articleData.content.length : 0,
-        wordCount: articleData.wordCount,
-        imageCount: articleData.images ? articleData.images.length : 0,
-        tagsCount: articleData.tags ? articleData.tags.length : 0,
-        readingTime: articleData.readingTime
-      });
-      sendResponse(articleData);
-    }).catch(error => {
-      console.error('Enhanced extraction failed:', error);
-      sendResponse({ error: error.message });
-    });
-    
-    return true; // Keep message channel open for async response
-  } else if (msg.type === 'downloadImage') {
-    const options = {
-      enableCompression: msg.enableCompression || false,
-      quality: msg.quality || 0.8,
-      maxWidth: msg.maxWidth || 1200,
-      maxHeight: msg.maxHeight || 800
-    };
-    
-    downloadImage(msg.url, options).then(dataUrl => {
-      if (dataUrl) {
-        sendResponse({ success: true, dataUrl });
-      } else {
-        sendResponse({ success: false, error: '图片下载失败' });
-      }
-    }).catch(error => {
-      sendResponse({ success: false, error: error.message });
-    });
-    return true;
-  }
+// 添加基础功能检测
+console.log('🔧 基础功能检测:', {
+  hasChrome: typeof chrome !== 'undefined',
+  hasDocument: typeof document !== 'undefined',
+  hasWindow: typeof window !== 'undefined'
 });
 
-// Add debug information to console
-// 辅助函数：验证图片URL是否有效
-function isValidImageUrl(url) {
-  if (!url || typeof url !== 'string') {
-    return false;
-  }
+// 完整文章提取函数 - 和CLI使用相同逻辑
+async function extractFullArticle(options = {}) {
+  console.log('🚀 开始完整文章提取（CLI同等逻辑）...');
+  console.log('提取选项:', options);
   
-  // 过滤掉无效的URL类型
-  const invalidPrefixes = [
-    'data:',                    // base64图片
-    'chrome-extension://',      // 浏览器扩展链接
-    'moz-extension://',         // Firefox扩展链接
-    'chrome://',               // Chrome内部页面
-    'about:',                  // 浏览器内部页面
-    'javascript:',             // JavaScript代码
-    'blob:',                   // Blob URL（通常是临时的）
-    'extension://'             // 通用扩展前缀
-  ];
+  const isWeChatPage = window.location.href.includes('mp.weixin.qq.com');
+  console.log('🔍 页面类型检查:', {
+    url: window.location.href,
+    isWeChatPage,
+    hostname: window.location.hostname
+  });
   
-  // 检查是否是无效前缀
-  for (const prefix of invalidPrefixes) {
-    if (url.startsWith(prefix)) {
-      console.log(`🚫 过滤无效图片链接: ${url.substring(0, 50)}... (${prefix})`);
-      return false;
+  // 使用和CLI相同的微信选择器优先级
+  const WECHAT_SELECTORS = {
+    title: [
+      '#activity-name',           // 微信文章标题主选择器
+      '.rich_media_title',        // 备选标题选择器
+      '[id*="title"]',           // 任何包含title的id
+      'h1'                       // HTML标准标题
+    ],
+    author: [
+      '#js_name',                // 微信公众号名称
+      '.account_nickname_inner', // 账号昵称
+      '.profile_nickname',       // 简介昵称
+      '[id*="author"]',          // 任何包含author的id
+      '.author'                  // 通用作者类
+    ],
+    publishTime: [
+      '#publish_time',           // 发布时间ID
+      '.publish_time',           // 发布时间类
+      '[id*="time"]',           // 任何包含time的id
+      '.time'                   // 通用时间类
+    ],
+    content: [
+      '#js_content',            // 微信文章内容主选择器
+      '.rich_media_content',    // 富媒体内容
+      '[id*="content"]',        // 任何包含content的id
+      '.article-content',       // 通用文章内容
+      '.content'               // 通用内容类
+    ]
+  };
+  
+  // 提取标题 - 按优先级尝试
+  let title = '';
+  for (const selector of WECHAT_SELECTORS.title) {
+    const element = document.querySelector(selector);
+    if (element && element.textContent.trim()) {
+      title = element.textContent.trim();
+      console.log(`✅ 标题提取成功 (${selector}):`, title);
+      break;
     }
   }
   
-  // 检查是否是有效的HTTP(S) URL
-  try {
-    const urlObj = new URL(url);
-    if (!['http:', 'https:'].includes(urlObj.protocol)) {
-      console.log(`🚫 过滤非HTTP图片链接: ${url.substring(0, 50)}... (${urlObj.protocol})`);
-      return false;
-    }
-  } catch (error) {
-    console.log(`🚫 过滤无效URL格式: ${url.substring(0, 50)}...`);
-    return false;
+  // 如果还没有标题，使用document.title作为备选
+  if (!title) {
+    title = document.title || 'No title found';
+    console.log('⚠️ 使用document.title作为备选:', title);
   }
   
-  return true;
+  // 提取作者 - 按优先级尝试
+  let author = '';
+  for (const selector of WECHAT_SELECTORS.author) {
+    const element = document.querySelector(selector);
+    if (element && element.textContent.trim()) {
+      author = element.textContent.trim();
+      console.log(`✅ 作者提取成功 (${selector}):`, author);
+      break;
+    }
+  }
+  
+  // 提取发布时间
+  let publishTime = '';
+  for (const selector of WECHAT_SELECTORS.publishTime) {
+    const element = document.querySelector(selector);
+    if (element && element.textContent.trim()) {
+      publishTime = element.textContent.trim();
+      console.log(`✅ 发布时间提取成功 (${selector}):`, publishTime);
+      break;
+    }
+  }
+  
+  // 提取内容 - 按优先级尝试，保留完整HTML
+  let content = '';
+  let contentElement = null;
+  for (const selector of WECHAT_SELECTORS.content) {
+    const element = document.querySelector(selector);
+    if (element && element.innerHTML.trim()) {
+      contentElement = element;
+      content = element.innerHTML.trim();
+      console.log(`✅ 内容提取成功 (${selector}), 长度:`, content.length);
+      break;
+    }
+  }
+  
+  // 如果没有找到内容，使用整个body（但这通常不理想）
+  if (!content) {
+    content = document.body ? document.body.innerHTML : '';
+    console.log('⚠️ 使用整个body作为内容备选, 长度:', content.length);
+  }
+  
+  // 提取摘要 - 使用和CLI相同的META优先策略
+  let digest = '';
+  const metaDesc = document.querySelector('meta[name="description"]');
+  const ogDesc = document.querySelector('meta[property="og:description"]');
+  const twitterDesc = document.querySelector('meta[name="twitter:description"]');
+  
+  if (metaDesc && metaDesc.content) {
+    digest = metaDesc.content.trim();
+    console.log('✅ 从meta description提取摘要:', digest.substring(0, 50) + '...');
+  } else if (ogDesc && ogDesc.content) {
+    digest = ogDesc.content.trim();
+    console.log('✅ 从og:description提取摘要:', digest.substring(0, 50) + '...');
+  } else if (twitterDesc && twitterDesc.content) {
+    digest = twitterDesc.content.trim();
+    console.log('✅ 从twitter:description提取摘要:', digest.substring(0, 50) + '...');
+  } else if (content) {
+    // 从内容中生成摘要
+    const textContent = content.replace(/<[^>]*>/g, '').trim();
+    digest = textContent.substring(0, 150);
+    if (textContent.length > 150) digest += '...';
+    console.log('✅ 从内容生成摘要:', digest.substring(0, 50) + '...');
+  }
+  
+  // 提取图片 - 从内容区域（支持懒加载）
+  let images = [];
+  if (contentElement) {
+    // 先尝试触发懒加载
+    await triggerLazyLoadingQuick(contentElement);
+    
+    const imgElements = contentElement.querySelectorAll('img');
+    images = Array.from(imgElements).map((img, index) => {
+      // 懒加载兼容：优先获取 data-src 等属性
+      let src = img.getAttribute('data-src') || 
+                img.getAttribute('data-original') || 
+                img.getAttribute('data-lazy') ||
+                img.getAttribute('data-url') ||
+                img.src;
+      
+      return {
+        src: src,
+        alt: img.alt || '',
+        title: img.title || '',
+        index: index,
+        isLazyLoaded: img.hasAttribute('data-src') || img.hasAttribute('data-original'),
+        originalSrc: img.src,
+        dataSrc: img.getAttribute('data-src')
+      };
+    }).filter(img => {
+      // 过滤有效图片URL，排除占位符
+      if (!img.src || img.src.startsWith('data:')) return false;
+      
+      const placeholderIndicators = ['placeholder', 'loading', 'blank', '1x1', 'spacer'];
+      const isPlaceholder = placeholderIndicators.some(indicator => 
+        img.src.toLowerCase().includes(indicator)
+      );
+      
+      return !isPlaceholder;
+    });
+    
+    console.log(`✅ 提取到 ${images.length} 张图片（含懒加载支持）`);
+    console.log('图片详情:', images.map(img => ({
+      src: img.src.substring(0, 60) + '...',
+      isLazyLoaded: img.isLazyLoaded
+    })));
+  }
+  
+  // 计算字数
+  const textContent = content.replace(/<[^>]*>/g, '');
+  const wordCount = (textContent.match(/[\u4e00-\u9fa5]|[a-zA-Z]+/g) || []).length;
+  
+  const article = {
+    title,
+    author,
+    publishTime,
+    content,  // 完整内容，不截断
+    digest,
+    images,
+    url: window.location.href,
+    siteName: author || '微信公众号',
+    slug: generateSlug(title),
+    domain: window.location.hostname,
+    wordCount,
+    extractionMethod: 'wechat-enhanced-full',
+    timestamp: new Date().toISOString(),
+    isWeChatPage
+  };
+  
+  console.log('✅ 完整提取完成:', {
+    title: article.title,
+    contentLength: article.content.length,
+    imageCount: article.images.length,
+    wordCount: article.wordCount,
+    hasDigest: !!article.digest
+  });
+  
+  return article;
 }
 
-console.log('Enhanced Smart Article Extractor content script loaded with Defuddle support');
-console.log('Current domain:', window.location.hostname);
-console.log('Defuddle available at load:', typeof Defuddle);
+// 生成slug的简单实现
+function generateSlug(title) {
+  if (!title) return '';
+  return title
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '') // 移除特殊字符
+    .replace(/[\s_-]+/g, '-') // 替换空格和下划线为连字符
+    .replace(/^-+|-+$/g, ''); // 移除开头和结尾的连字符
+}
 
-// 🛡️ 启动Extension清理器以阻止其他Extension注入
-startExtensionCleanupWatcher(); 
+// 快速懒加载触发函数
+async function triggerLazyLoadingQuick(container) {
+  console.log('🔄 开始触发懒加载...');
+  
+  try {
+    // 方法1：强制加载所有懒加载图片
+    const lazyImages = container.querySelectorAll('img[data-src], img[data-original], img[data-lazy]');
+    console.log(`发现 ${lazyImages.length} 张懒加载图片`);
+    
+    let loadedCount = 0;
+    const loadPromises = [];
+    
+    lazyImages.forEach(img => {
+      const dataSrc = img.getAttribute('data-src') || 
+                     img.getAttribute('data-original') || 
+                     img.getAttribute('data-lazy');
+      
+      if (dataSrc && !isPlaceholderSrc(dataSrc)) {
+        const loadPromise = new Promise((resolve) => {
+          const originalSrc = img.src;
+          
+          img.onload = () => {
+            loadedCount++;
+            console.log(`✅ 懒加载图片加载成功: ${dataSrc.substring(0, 50)}...`);
+            resolve();
+          };
+          
+          img.onerror = () => {
+            console.log(`❌ 懒加载图片加载失败: ${dataSrc.substring(0, 50)}...`);
+            img.src = originalSrc; // 恢复原始src
+            resolve();
+          };
+          
+          // 触发加载
+          img.src = dataSrc;
+          
+          // 清理懒加载属性，避免重复处理
+          img.removeAttribute('data-src');
+          img.removeAttribute('data-original');
+          img.removeAttribute('data-lazy');
+        });
+        
+        loadPromises.push(loadPromise);
+      }
+    });
+    
+    if (loadPromises.length > 0) {
+      await Promise.allSettled(loadPromises);
+      console.log(`🖼️ 强制加载了 ${loadedCount} 张懒加载图片`);
+    }
+    
+    // 方法2：滚动触发（作为备用）
+    await scrollToTriggerLazyLoad();
+    
+    // 等待一段时间让图片加载
+    await sleep(500);
+    
+    console.log('✅ 懒加载触发完成');
+  } catch (error) {
+    console.log(`⚠️ 懒加载触发失败: ${error.message}`);
+  }
+}
+
+// 判断是否是占位符图片
+function isPlaceholderSrc(src) {
+  if (!src) return true;
+  
+  const placeholderIndicators = [
+    'placeholder', 'loading', 'blank', 'transparent', 
+    '1x1', 'spacer', 'pixel.gif', 'default.jpg'
+  ];
+  
+  const srcLower = src.toLowerCase();
+  return placeholderIndicators.some(indicator => srcLower.includes(indicator));
+}
+
+// 滚动页面触发懒加载
+async function scrollToTriggerLazyLoad() {
+  const originalScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+  
+  try {
+    // 滚动到页面底部
+    const scrollHeight = document.body.scrollHeight;
+    const steps = 3; // 减少步数提高速度
+    const stepSize = scrollHeight / steps;
+    
+    for (let i = 0; i <= steps; i++) {
+      const scrollTo = i * stepSize;
+      window.scrollTo(0, scrollTo);
+      await sleep(100); // 等待懒加载触发
+    }
+    
+    console.log('📜 滚动触发懒加载完成');
+  } finally {
+    // 恢复原始滚动位置
+    window.scrollTo(0, originalScrollTop);
+  }
+}
+
+// 睡眠函数
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 简单的文章提取函数（带详细日志）
+function extractBasicArticle() {
+  console.log('🎯 开始基础文章提取...');
+  
+  // 检查页面类型
+  const isWeChatPage = window.location.href.includes('mp.weixin.qq.com');
+  console.log('🔍 页面检查:', {
+    url: window.location.href,
+    isWeChatPage,
+    hostname: window.location.hostname
+  });
+  
+  // 提取HTML内容（保留格式）
+  let content = 'No content';
+  if (document.body) {
+    // 对于微信文章，尝试提取主要内容区域
+    if (isWeChatPage) {
+      const contentSelector = '#js_content, .rich_media_content, [id*="content"]';
+      const contentElement = document.querySelector(contentSelector);
+      if (contentElement) {
+        content = contentElement.innerHTML;
+        console.log('🔍 微信文章内容提取:', {
+          selector: contentSelector,
+          contentLength: content.length,
+          hasHTML: /<[^>]+>/.test(content)
+        });
+      } else {
+        content = document.body.innerHTML;
+        console.log('🔍 使用整个body内容作为后备');
+      }
+    } else {
+      content = document.body.innerHTML;
+    }
+    
+    // 保留完整内容，不截断
+    console.log('📝 提取完整内容，长度:', content.length);
+  }
+
+  const article = {
+    title: document.title || 'No title found',
+    url: window.location.href,
+    content: content,
+    extractionMethod: 'basic-test-with-html',
+    timestamp: new Date().toISOString(),
+    isWeChatPage
+  };
+  
+  console.log('✅ 基础提取完成:', {
+    title: article.title,
+    contentLength: article.content.length,
+    url: article.url,
+    isWeChatPage: article.isWeChatPage
+  });
+  
+  return article;
+}
+
+// 消息监听器（带详细日志）
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('📨 收到消息:', {
+    type: request.type,
+    sender: sender.tab ? `Tab ${sender.tab.id}` : 'Extension',
+    options: request.options
+  });
+  
+  if (request.type === 'extract' || request.type === 'EXTRACT_ARTICLE' || request.type === 'FULL_EXTRACT') {
+    console.log('🎯 处理提取请求:', request.type);
+    
+    // 异步处理
+    (async () => {
+      try {
+        let article;
+        
+        if (request.type === 'FULL_EXTRACT') {
+          // 使用完整提取逻辑（和CLI一致）
+          console.log('🔄 执行完整提取逻辑（含懒加载）...');
+          article = await extractFullArticle(request.options);
+        } else {
+          // 基础提取逻辑（向后兼容）
+          console.log('🔄 执行基础提取逻辑...');
+          article = extractBasicArticle();
+        }
+        
+        console.log('📤 提取完成，验证数据:', {
+        requestType: request.type,
+        hasArticle: !!article,
+        articleTitle: article?.title,
+        contentLength: article?.content?.length || 0,
+        hasImages: !!(article?.images && article.images.length > 0),
+        extractionMethod: article?.extractionMethod
+      });
+
+      // 验证关键数据
+      if (!article) {
+        throw new Error('提取函数返回空数据');
+      }
+      
+      if (!article.title || article.title.trim() === '') {
+        console.warn('⚠️ 标题为空，使用页面标题作为备选');
+        article.title = document.title || '未知标题';
+      }
+      
+      if (!article.content || article.content.trim() === '') {
+        console.warn('⚠️ 内容为空，使用body内容作为备选');
+        article.content = document.body ? document.body.innerHTML : '无内容';
+      }
+      
+      // 确保数据完整性
+      article.url = article.url || window.location.href;
+      article.extractedAt = article.extractedAt || new Date().toISOString();
+      
+      console.log('✅ 数据验证通过，准备发送响应:', {
+        title: article.title,
+        contentLength: article.content.length,
+        hasUrl: !!article.url,
+        hasTimestamp: !!article.extractedAt
+      });
+      
+      // 兼容不同响应格式
+      if (request.type === 'extract') {
+        console.log('📤 发送article格式响应（popup.js兼容）');
+        sendResponse(article); // popup.js期望的格式
+      } else {
+        console.log('📤 发送包装格式响应');
+        sendResponse({ success: true, data: article });
+      }
+    } catch (error) {
+      console.error('❌ 提取错误:', error);
+      
+      // 创建错误时的备选数据
+      const fallbackArticle = {
+        title: document.title || '提取失败',
+        content: '提取过程中发生错误',
+        url: window.location.href,
+        extractionMethod: 'error-fallback',
+        extractedAt: new Date().toISOString(),
+        error: error.message
+      };
+      
+      if (request.type === 'extract') {
+        console.log('📤 发送备选数据（extract）');
+        sendResponse(fallbackArticle);
+      } else {
+        console.log('📤 发送错误响应');
+        sendResponse({ success: false, error: error.message, fallbackData: fallbackArticle });
+      }
+    }
+  }
+  
+  return true; // 保持消息通道开放
+});
+
+// 添加可视化加载指示器
+function addLoadIndicator() {
+  const indicator = document.createElement('div');
+  indicator.id = 'content-script-indicator';
+  indicator.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: #4CAF50;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    z-index: 999999;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  `;
+  indicator.textContent = 'Content Script Active ✅';
+  
+  if (document.body) {
+    document.body.appendChild(indicator);
+    
+    // 3秒后移除
+    setTimeout(() => {
+      if (document.body.contains(indicator)) {
+        document.body.removeChild(indicator);
+      }
+    }, 3000);
+  } else {
+    // 如果body还没有加载，等待一下再添加
+    setTimeout(() => {
+      if (document.body) {
+        document.body.appendChild(indicator);
+        setTimeout(() => {
+          if (document.body.contains(indicator)) {
+            document.body.removeChild(indicator);
+          }
+        }, 3000);
+      }
+    }, 100);
+  }
+}
+
+// DOM加载完成后的初始化
+function initialize() {
+  console.log('📄 初始化content script');
+  
+  // 添加可视化指示器
+  addLoadIndicator();
+  
+  // 检查是否为微信文章页面
+  if (window.location.href.includes('mp.weixin.qq.com')) {
+    console.log('🔍 检测到微信文章页面');
+  }
+}
+
+// 根据DOM状态执行初始化
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initialize);
+} else {
+  initialize();
+}
+
+// 导出函数供其他脚本使用
+window.wechatExtractor = {
+  extractBasicArticle,
+  isWeChatPage: () => window.location.href.includes('mp.weixin.qq.com')
+};
+
+console.log('🎉 Content script设置完成'); 
