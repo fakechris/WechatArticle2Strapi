@@ -36,3 +36,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+*.csv
+
+# Debug and test files (in root - should use temp/ directory instead)
+debug-*.js
+debug-*.html
+debug-*.json
+test-*.js
+*-test.js
+temp-*.js
+demo-*.js
+
+# Temp directory contents (but keep structure)
+temp/*
+!temp/.gitkeep

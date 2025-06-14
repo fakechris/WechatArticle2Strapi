@@ -1,0 +1,7 @@
+# Temp Directory Structure
+# This file ensures the temp directory structure is maintained in git
+# All temporary files should be created in appropriate subdirectories:
+# - debug/    : debug files
+# - test/     : test scripts  
+# - demo/     : demo files
+# - temp-scripts/ : temporary scripts 
