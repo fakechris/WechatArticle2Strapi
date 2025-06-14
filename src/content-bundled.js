@@ -252,7 +252,8 @@ function extractBasicArticle() {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 收到消息:', {
     type: request.type,
-    sender: sender.tab ? `Tab ${sender.tab.id}` : 'Extension'
+    sender: sender.tab ? `Tab ${sender.tab.id}` : 'Extension',
+    options: request.options
   });
   
   if (request.type === 'extract' || request.type === 'EXTRACT_ARTICLE' || request.type === 'FULL_EXTRACT') {
@@ -267,14 +268,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         article = extractFullArticle(request.options);
       } else {
         // 基础提取逻辑（向后兼容）
+        console.log('🔄 执行基础提取逻辑...');
         article = extractBasicArticle();
       }
       
-      console.log('📤 准备发送响应:', {
+      console.log('📤 提取完成，验证数据:', {
         requestType: request.type,
         hasArticle: !!article,
         articleTitle: article?.title,
-        contentLength: article?.content?.length || 0
+        contentLength: article?.content?.length || 0,
+        hasImages: !!(article?.images && article.images.length > 0),
+        extractionMethod: article?.extractionMethod
+      });
+
+      // 验证关键数据
+      if (!article) {
+        throw new Error('提取函数返回空数据');
+      }
+      
+      if (!article.title || article.title.trim() === '') {
+        console.warn('⚠️ 标题为空，使用页面标题作为备选');
+        article.title = document.title || '未知标题';
+      }
+      
+      if (!article.content || article.content.trim() === '') {
+        console.warn('⚠️ 内容为空，使用body内容作为备选');
+        article.content = document.body ? document.body.innerHTML : '无内容';
+      }
+      
+      // 确保数据完整性
+      article.url = article.url || window.location.href;
+      article.extractedAt = article.extractedAt || new Date().toISOString();
+      
+      console.log('✅ 数据验证通过，准备发送响应:', {
+        title: article.title,
+        contentLength: article.content.length,
+        hasUrl: !!article.url,
+        hasTimestamp: !!article.extractedAt
       });
       
       // 兼容不同响应格式
@@ -288,10 +318,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } catch (error) {
       console.error('❌ 提取错误:', error);
       
+      // 创建错误时的备选数据
+      const fallbackArticle = {
+        title: document.title || '提取失败',
+        content: '提取过程中发生错误',
+        url: window.location.href,
+        extractionMethod: 'error-fallback',
+        extractedAt: new Date().toISOString(),
+        error: error.message
+      };
+      
       if (request.type === 'extract') {
-        sendResponse(null);
+        console.log('📤 发送备选数据（extract）');
+        sendResponse(fallbackArticle);
       } else {
-        sendResponse({ success: false, error: error.message });
+        console.log('📤 发送错误响应');
+        sendResponse({ success: false, error: error.message, fallbackData: fallbackArticle });
       }
     }
   }

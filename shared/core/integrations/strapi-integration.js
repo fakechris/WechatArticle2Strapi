@@ -162,10 +162,35 @@ export class StrapiIntegration {
       data[fieldMap.images] = article.processedImages;
     }
     
-    // 头图字段
+    // 头图字段 - 修复Strapi media字段格式
     if (article.headImageId && fieldMap.headImg) {
-      data[fieldMap.headImg] = article.headImageId;
-      this.log('设置头图', { field: fieldMap.headImg, id: article.headImageId });
+      // Strapi v4 单选media字段格式：直接使用数字ID
+      const headImgValue = Number(article.headImageId);
+      data[fieldMap.headImg] = headImgValue;
+      
+      this.log('设置头图字段', { 
+        field: fieldMap.headImg, 
+        originalId: article.headImageId,
+        finalValue: headImgValue,
+        valueType: typeof headImgValue
+      });
+      
+      // 额外调试：检查头图信息
+      if (article.headImageInfo) {
+        this.log('头图详细信息', {
+          id: article.headImageInfo.id,
+          url: article.headImageInfo.url,
+          filename: article.headImageInfo.filename,
+          originalUrl: article.headImageInfo.originalUrl
+        });
+      }
+    } else if (fieldMap.headImg) {
+      this.log('头图字段跳过', {
+        field: fieldMap.headImg,
+        hasHeadImageId: !!article.headImageId,
+        headImageId: article.headImageId,
+        reason: !article.headImageId ? '没有头图ID' : '字段映射不存在'
+      });
     }
     
     // Slug字段
@@ -254,9 +279,13 @@ export class StrapiIntegration {
       hasGetHeaders: typeof formData?.getHeaders === 'function'
     });
     
-    // 添加文件数据
+    // 添加文件数据，确保正确的MIME类型
     if (this.options.environment === 'browser') {
-      formData.append('files', new Blob([imageData]), filename);
+      // 根据文件扩展名确定MIME类型
+      const mimeType = this.getMimeType(filename);
+      const blob = new Blob([imageData], { type: mimeType });
+      formData.append('files', blob, filename);
+      this.log('浏览器环境文件添加', { filename, mimeType, blobSize: blob.size });
     } else {
       // Node.js环境：确保imageData是Buffer类型
       const buffer = Buffer.isBuffer(imageData) ? imageData : Buffer.from(imageData);
@@ -613,6 +642,28 @@ export class StrapiIntegration {
   }
 
   /**
+   * 根据文件名获取MIME类型
+   * @param {string} filename - 文件名
+   * @returns {string} MIME类型
+   */
+  getMimeType(filename) {
+    const extension = filename.split('.').pop().toLowerCase();
+    const mimeTypes = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'bmp': 'image/bmp',
+      'svg': 'image/svg+xml'
+    };
+    
+    const mimeType = mimeTypes[extension] || 'image/jpeg';
+    this.log('MIME类型确定', { filename, extension, mimeType });
+    return mimeType;
+  }
+
+  /**
    * 智能替换内容中的图片链接
    * @param {string} content - 文章内容
    * @param {string} originalUrl - 原始图片URL
@@ -835,8 +886,24 @@ export class StrapiIntegration {
       
       // 处理头图（如果启用）
       if (advancedSettings.uploadHeadImg && article.images && article.images.length > 0) {
-        this.log('开始处理头图上传');
+        this.log('开始处理头图上传', {
+          uploadHeadImg: advancedSettings.uploadHeadImg,
+          imageCount: article.images.length,
+          headImgIndex: advancedSettings.headImgIndex || 0
+        });
         processedArticle = await this.processHeadImage(processedArticle, advancedSettings);
+        this.log('头图处理完成', {
+          hasHeadImageId: !!processedArticle.headImageId,
+          headImageId: processedArticle.headImageId,
+          headImageUrl: processedArticle.headImageUrl
+        });
+      } else {
+        this.log('跳过头图处理', {
+          uploadHeadImg: advancedSettings.uploadHeadImg,
+          hasImages: !!(article.images && article.images.length > 0),
+          imageCount: article.images ? article.images.length : 0,
+          reason: !advancedSettings.uploadHeadImg ? '头图上传未启用' : '没有图片'
+        });
       }
       
       // 处理文章图片（如果启用）
@@ -1156,6 +1223,24 @@ class BrowserHttpClient {
     const response = await fetch(url, {
       method: 'GET',
       headers: config.headers || {}
+    });
+    
+    const responseData = await response.json();
+    
+    return {
+      status: response.status,
+      data: responseData
+    };
+  }
+
+  async put(url, data, config = {}) {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...config.headers
+      },
+      body: JSON.stringify(data)
     });
     
     const responseData = await response.json();

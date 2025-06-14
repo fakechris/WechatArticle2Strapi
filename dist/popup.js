@@ -354,7 +354,7 @@ document.getElementById('preview').addEventListener('click', () => {
   });
 });
 
-// 提取并发送功能
+// 提取并发送功能 - 🔥 重构：使用和Preview相同的完整提取逻辑
 document.getElementById('extract').addEventListener('click', () => {
   updateStatus('Extracting and sending...');
   setLoading(true);
@@ -369,9 +369,31 @@ document.getElementById('extract').addEventListener('click', () => {
       return;
     }
     
-    chrome.tabs.sendMessage(currentTab.id, { type: 'extract' }, article => {
-      console.log('=== Extract & Send clicked ===');
-      console.log('Extract response:', article);
+    console.log('=== Extract & Send 开始 ===');
+    console.log('当前标签页:', {
+      url: currentTab.url,
+      title: currentTab.title,
+      id: currentTab.id
+    });
+    
+    // 🎯 使用和Preview相同的完整提取逻辑
+    chrome.tabs.sendMessage(currentTab.id, { 
+      type: 'FULL_EXTRACT',  // 🔥 改为使用完整提取
+      options: {
+        includeFullContent: true,
+        includeImages: true,
+        includeMetadata: true
+      }
+    }, response => {
+      console.log('=== Content Script 响应 ===');
+      console.log('Extract response:', {
+        hasResponse: !!response,
+        responseType: typeof response,
+        hasSuccess: !!(response && response.success),
+        hasData: !!(response && response.data),
+        directTitle: response?.title,
+        dataTitle: response?.data?.title
+      });
       
       if (chrome.runtime.lastError) {
         console.error('Content script error:', chrome.runtime.lastError);
@@ -380,33 +402,55 @@ document.getElementById('extract').addEventListener('click', () => {
         return;
       }
       
+      // 🎯 处理不同响应格式（和Preview一致）
+      let article = null;
+      if (response && response.success && response.data) {
+        article = response.data;
+        console.log('✅ 使用包装格式数据');
+      } else if (response && response.title) {
+        article = response;
+        console.log('✅ 使用直接格式数据');
+      }
+      
       if (!article || !article.title) {
-        console.error('No article found');
+        console.error('No article found:', {
+          hasArticle: !!article,
+          articleKeys: article ? Object.keys(article) : [],
+          title: article?.title
+        });
         updateStatus('No article content found', true);
         setLoading(false);
         return;
       }
       
-      console.log('Article extracted successfully:', {
+      console.log('✅ 文章提取成功:', {
         title: article.title,
+        author: article.author,
+        siteName: article.siteName,
+        digest: article.digest,
         contentLength: article.content?.length,
         imageCount: article.images?.length,
+        extractionMethod: article.extractionMethod,
         hasDigest: !!article.digest
       });
       
       updateStatus('Sending to Strapi...');
       
-      console.log('=== Sending to Background Script ===');
+      console.log('=== 🎯 发送到Background Script (使用完整数据) ===');
       console.log('Article to send:', {
         title: article.title,
+        author: article.author,
+        siteName: article.siteName,
+        digest: article.digest,
         method: article.extractionMethod,
-        contentLength: article.content?.length
+        contentLength: article.content?.length,
+        allKeys: Object.keys(article)
       });
       
       chrome.runtime.sendMessage({ type: 'sendToStrapi', article }, response => {
         setLoading(false);
         
-        console.log('=== Background Script Response ===');
+        console.log('=== Background Script 响应 ===');
         console.log('Response received:', response);
         console.log('Chrome runtime error:', chrome.runtime.lastError);
         
@@ -417,7 +461,7 @@ document.getElementById('extract').addEventListener('click', () => {
         }
         
         if (response && response.success) {
-          console.log('Upload successful, response data:', response.data);
+          console.log('✅ 上传成功, response data:', response.data);
           updateStatus('Successfully uploaded to Strapi!');
           // 显示成功详情
           if (response.data && response.data.id) {
@@ -426,7 +470,7 @@ document.getElementById('extract').addEventListener('click', () => {
             updateStatus(`Successfully uploaded! Article ID: ${createdId}`);
           }
         } else {
-          console.error('Upload failed, response:', response);
+          console.error('❌ 上传失败, response:', response);
           const errorMsg = response && response.error ? response.error : 'Unknown error occurred';
           updateStatus('Upload failed: ' + errorMsg, true);
         }

@@ -711,22 +711,24 @@ function validateUnifiedConfig(config) {
 }
 
 /**
- * 使用统一逻辑构建Strapi数据
+ * 使用统一逻辑构建Strapi数据（与CLI完全一致）
  * @param {Object} article - 文章对象
  * @param {Object} config - 统一配置对象
  * @returns {Object} Strapi格式的数据
  */
 function buildUnifiedStrapiData(article, config) {
   const fieldMapping = config.fieldMapping || { enabled: false, fields: {} };
+  const fieldPresets = config.fieldPresets || { enabled: false, presets: {} };
   const advancedSettings = config.advancedSettings || {};
   
-  // 获取字段映射
-  const fieldMap = fieldMapping.enabled ? fieldMapping.fields : getSafeUnifiedFieldMapping();
+  // 获取字段映射 - 与CLI逻辑完全一致
+  const fieldMap = fieldMapping.enabled ? fieldMapping.fields : getCompleteDefaultFieldMapping();
   
   console.log('Using unified field mapping:', { 
     enabled: fieldMapping.enabled, 
     fieldMapKeys: Object.keys(fieldMap),
-    safeMode: !fieldMapping.enabled
+    presetsEnabled: fieldPresets.enabled,
+    presetsCount: Object.keys(fieldPresets.presets || {}).length
   });
   
   // 构建基础数据
@@ -746,11 +748,22 @@ function buildUnifiedStrapiData(article, config) {
     }
   }
   
-  // 可选字段 - 只有在字段映射中定义且文章有值时才添加
+  // 可选字段 - 与CLI逻辑一致，支持空字符串字段映射
   addUnifiedOptionalField(data, fieldMap, 'author', article.author, 100);
   addUnifiedOptionalField(data, fieldMap, 'publishTime', article.publishTime);
   addUnifiedOptionalField(data, fieldMap, 'digest', article.digest, 500);
   addUnifiedOptionalField(data, fieldMap, 'sourceUrl', article.url);
+  
+  // 图片字段
+  if (article.processedImages && article.processedImages.length > 0 && fieldMap.images) {
+    data[fieldMap.images] = article.processedImages;
+  }
+  
+  // 头图字段
+  if (article.headImageId && fieldMap.headImg) {
+    data[fieldMap.headImg] = article.headImageId;
+    console.log('设置头图字段:', { field: fieldMap.headImg, id: article.headImageId });
+  }
   
   // Slug字段
   if (advancedSettings.generateSlug && fieldMap.slug && article.title) {
@@ -761,48 +774,94 @@ function buildUnifiedStrapiData(article, config) {
   // 增强元数据字段
   addUnifiedOptionalField(data, fieldMap, 'siteName', article.siteName, 100);
   addUnifiedOptionalField(data, fieldMap, 'language', article.language, 10);
-  addUnifiedOptionalField(data, fieldMap, 'domain', article.domain, 100);
-  addUnifiedOptionalField(data, fieldMap, 'wordCount', article.wordCount);
-  addUnifiedOptionalField(data, fieldMap, 'extractionMethod', article.extractionMethod, 50);
+  addUnifiedOptionalField(data, fieldMap, 'tags', article.tags);
+  addUnifiedOptionalField(data, fieldMap, 'readingTime', article.readingTime);
   addUnifiedOptionalField(data, fieldMap, 'created', article.extractedAt || new Date().toISOString());
   
-  console.log('Built unified Strapi data:', Object.keys(data));
+  // 🔥 新增：字段预设处理（与CLI一致）
+  if (fieldPresets.enabled && fieldPresets.presets) {
+    for (const [field, preset] of Object.entries(fieldPresets.presets)) {
+      if (preset.value !== undefined) {
+        data[field] = preset.value;
+        console.log('应用预设字段:', { field, value: preset.value });
+      }
+    }
+  }
+  
+  console.log('Built unified Strapi data:', {
+    keys: Object.keys(data),
+    hasPresets: fieldPresets.enabled,
+    dataSize: JSON.stringify(data).length
+  });
+  
   return data;
 }
 
 /**
- * 添加可选字段的统一逻辑
+ * 添加可选字段的统一逻辑（与CLI完全一致）
  */
 function addUnifiedOptionalField(data, fieldMap, sourceField, value, maxLength = null) {
-  // 只有在字段映射中定义了该字段且值存在时才添加
-  if (fieldMap[sourceField] && value !== undefined && value !== null && value !== '') {
-    let processedValue = typeof value === 'string' ? value.trim() : value;
-    if (maxLength && typeof processedValue === 'string') {
-      processedValue = processedValue.substring(0, maxLength);
-    }
-    data[fieldMap[sourceField]] = processedValue;
+  // 检查字段映射中是否定义了目标字段且不为空字符串
+  const targetField = fieldMap[sourceField];
+  if (!targetField || targetField.trim() === '') {
+    return; // 如果字段映射为空或空字符串，跳过此字段
+  }
+  
+  // 检查值是否存在且有意义
+  if (value === undefined || value === null) {
+    return;
+  }
+  
+  // 处理空字符串 - 只有非空字符串才添加
+  if (typeof value === 'string' && value.trim() === '') {
+    return;
+  }
+  
+  // 处理空数组
+  if (Array.isArray(value) && value.length === 0) {
+    return;
+  }
+  
+  let processedValue = value;
+  
+  // 字符串长度限制和清理
+  if (typeof value === 'string' && maxLength) {
+    processedValue = value.trim().substring(0, maxLength);
+  } else if (typeof value === 'string') {
+    processedValue = value.trim();
+  }
+  
+  // 最终检查处理后的值
+  if (processedValue !== undefined && processedValue !== null && processedValue !== '') {
+    data[targetField] = processedValue;
+    console.log('字段映射成功:', { 
+      source: sourceField, 
+      target: targetField, 
+      valueType: typeof processedValue,
+      valueLength: typeof processedValue === 'string' ? processedValue.length : undefined
+    });
   }
 }
 
 /**
- * 获取安全的默认字段映射（不包含可能不存在的字段）
+ * 获取完整的默认字段映射（与CLI一致）
  */
-function getSafeUnifiedFieldMapping() {
+function getCompleteDefaultFieldMapping() {
   return {
     title: 'title',
     content: 'content',
     author: 'author',
     publishTime: 'publishTime',
     digest: 'digest',
-    // 注意：默认不包含 sourceUrl 字段，因为很多Strapi集合可能没有这个字段
-    // sourceUrl: 'sourceUrl',
+    sourceUrl: 'sourceUrl',
+    images: 'images',
     slug: 'slug',
     siteName: 'siteName',
     language: 'language',
-    domain: 'domain',
-    wordCount: 'wordCount',
-    extractionMethod: 'extractionMethod',
-    created: 'extractedAt'
+    tags: 'tags',
+    readingTime: 'readingTime',
+    created: 'extractedAt',
+    headImg: 'head_img'
   };
 }
 

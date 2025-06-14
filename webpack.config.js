@@ -9,7 +9,7 @@ export default {
   mode: 'production',
   entry: {
     content: './src/content-bundled.js',
-    background: './src/background.js',
+    background: './src/background-refactored.js',
     popup: './src/popup.js'
   },
   output: {
