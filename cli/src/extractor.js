@@ -686,6 +686,103 @@ class ArticleExtractor {
     return await this.strapiIntegration.sendToStrapi(article);
   }
 
+  // 🔥 新增：获取图片实际尺寸（Node.js环境）
+  async getImageDimensions(imageUrl) {
+    try {
+      // 在Node.js环境中使用sharp包获取图片尺寸
+      const axios = require('axios');
+      const sharp = require('sharp');
+      
+      const response = await axios({
+        method: 'get',
+        url: imageUrl,
+        responseType: 'arraybuffer',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+        },
+        timeout: 10000
+      });
+      
+      const metadata = await sharp(Buffer.from(response.data)).metadata();
+      
+      return {
+        width: metadata.width,
+        height: metadata.height,
+        aspectRatio: metadata.width / metadata.height
+      };
+    } catch (error) {
+      if (this.options.verbose) {
+        console.log(chalk.yellow(`⚠️ 无法获取图片尺寸: ${error.message}`));
+      }
+      // 返回默认值，表示无法检测
+      return {
+        width: 0,
+        height: 0,
+        aspectRatio: 1
+      };
+    }
+  }
+
+  // 🔥 新增：检查图片是否符合头图尺寸要求
+  async isValidHeadImage(imageUrl, minWidth = 200, minHeight = 200) {
+    try {
+      const dimensions = await this.getImageDimensions(imageUrl);
+      const isValid = dimensions.width >= minWidth && dimensions.height >= minHeight;
+      
+      if (this.options.verbose) {
+        console.log(chalk.blue(`📏 图片尺寸检查: ${imageUrl.substring(0, 60)}...`));
+        console.log(chalk.blue(`   尺寸: ${dimensions.width}x${dimensions.height}, 要求: ${minWidth}x${minHeight}, 符合: ${isValid ? '✅' : '❌'}`));
+      }
+      
+      return {
+        isValid,
+        dimensions
+      };
+    } catch (error) {
+      if (this.options.verbose) {
+        console.log(chalk.yellow(`⚠️ 图片尺寸检查失败: ${error.message}`));
+      }
+      return {
+        isValid: false,
+        error: error.message
+      };
+    }
+  }
+
+  // 🔥 新增：查找符合尺寸要求的头图
+  async findValidHeadImage(images, minWidth = 200, minHeight = 200) {
+    if (this.options.verbose) {
+      console.log(chalk.blue(`🔍 查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`));
+    }
+    
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i];
+      
+      if (this.options.verbose) {
+        console.log(chalk.blue(`📸 检查第 ${i + 1} 张图片...`));
+      }
+      
+      const validationResult = await this.isValidHeadImage(image.src, minWidth, minHeight);
+      
+      if (validationResult.isValid) {
+        if (this.options.verbose) {
+          console.log(chalk.green(`✅ 找到符合要求的头图: 索引 ${i}, 尺寸 ${validationResult.dimensions.width}x${validationResult.dimensions.height}`));
+        }
+        return {
+          image,
+          index: i,
+          dimensions: validationResult.dimensions
+        };
+      }
+    }
+    
+    if (this.options.verbose) {
+      console.log(chalk.yellow('❌ 未找到符合尺寸要求的头图'));
+    }
+    return null;
+  }
+
   // Process head image for Strapi upload
   async processHeadImage(article) {
     if (!article.images || article.images.length === 0) {
@@ -695,21 +792,69 @@ class ArticleExtractor {
       return article;
     }
 
-    const headImgIndex = this.options.config.advancedSettings?.headImgIndex || 0;
-    const targetImage = article.images[headImgIndex];
-
-    if (!targetImage) {
+    // 🔥 新增：根据尺寸要求查找合适的头图
+    const minWidth = 200;  // 最小宽度
+    const minHeight = 200; // 最小高度
+    
+    if (this.options.verbose) {
+      console.log(chalk.blue(`🎯 查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`));
+    }
+    
+    let targetImage;
+    let targetIndex;
+    let imageDimensions;
+    
+    // 如果指定了头图索引，先检查该索引的图片
+    const specifiedIndex = this.options.config.advancedSettings?.headImgIndex || 0;
+    const specifiedImage = article.images[specifiedIndex];
+    
+    if (specifiedImage) {
       if (this.options.verbose) {
-        console.log(chalk.yellow(`⚠️ No image found at index ${headImgIndex} for head image`));
+        console.log(chalk.blue(`🎯 检查指定的头图索引 ${specifiedIndex}...`));
       }
-      return article;
+      
+      const validationResult = await this.isValidHeadImage(specifiedImage.src, minWidth, minHeight);
+      
+      if (validationResult.isValid) {
+        targetImage = specifiedImage;
+        targetIndex = specifiedIndex;
+        imageDimensions = validationResult.dimensions;
+        
+        if (this.options.verbose) {
+          console.log(chalk.green(`✅ 指定索引的图片符合要求: ${imageDimensions.width}x${imageDimensions.height}`));
+        }
+      } else {
+        if (this.options.verbose) {
+          console.log(chalk.yellow(`❌ 指定索引的图片不符合尺寸要求，将搜索其他图片...`));
+        }
+      }
+    }
+    
+    // 如果指定索引的图片不符合要求，搜索所有图片
+    if (!targetImage) {
+      const validHeadImageResult = await this.findValidHeadImage(article.images, minWidth, minHeight);
+      
+      if (validHeadImageResult) {
+        targetImage = validHeadImageResult.image;
+        targetIndex = validHeadImageResult.index;
+        imageDimensions = validHeadImageResult.dimensions;
+      } else {
+        if (this.options.verbose) {
+          console.log(chalk.yellow('⚠️ 没有找到符合尺寸要求的头图，跳过头图处理'));
+        }
+        return {
+          ...article,
+          headImageError: `未找到符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`
+        };
+      }
+    }
+
+    if (this.options.verbose) {
+      console.log(chalk.blue(`🖼️ 选择第 ${targetIndex + 1} 张图片作为头图: ${targetImage.src.substring(0, 60)}...`));
+      console.log(chalk.blue(`📏 头图尺寸: ${imageDimensions.width}x${imageDimensions.height}`));
     }
 
     try {
-      if (this.options.verbose) {
-        console.log(chalk.blue(`🖼️ Processing head image from index ${headImgIndex}: ${targetImage.src.substring(0, 60)}...`));
-      }
-
       // Download and process the image
       const imageBuffer = await this.downloadImage(targetImage.src, article.url);
       const filename = this.generateHeadImageFilename(article.title, targetImage.src);
@@ -731,6 +876,7 @@ class ArticleExtractor {
         
         if (this.options.verbose) {
           console.log(chalk.green(`✅ Head image uploaded: ${uploadedFile.name} (ID: ${uploadedFile.id})`));
+          console.log(chalk.green(`📏 头图最终尺寸: ${imageDimensions.width}x${imageDimensions.height}`));
         }
 
         return {
@@ -741,8 +887,10 @@ class ArticleExtractor {
             id: uploadedFile.id,
             url: uploadedFile.url,
             filename: uploadedFile.name,
-            originalIndex: headImgIndex,
-            originalUrl: targetImage.src
+            originalIndex: targetIndex,
+            selectedIndex: targetIndex,
+            originalUrl: targetImage.src,
+            originalDimensions: imageDimensions
           }
         };
       }

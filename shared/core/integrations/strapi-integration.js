@@ -398,6 +398,144 @@ export class StrapiIntegration {
   }
 
   /**
+   * 获取图片实际尺寸
+   * @param {string} imageUrl - 图片URL
+   * @returns {Promise<Object>} 图片尺寸信息
+   */
+  async getImageDimensions(imageUrl) {
+    // 在浏览器环境中使用Image对象
+    if (typeof window !== 'undefined') {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        
+        img.onload = function() {
+          resolve({
+            width: this.naturalWidth,
+            height: this.naturalHeight,
+            aspectRatio: this.naturalWidth / this.naturalHeight
+          });
+        };
+        
+        img.onerror = function() {
+          reject(new Error(`无法加载图片: ${imageUrl}`));
+        };
+        
+        img.crossOrigin = 'anonymous';
+        img.src = imageUrl;
+      });
+    } else {
+      // 在Node.js环境中使用image-size包获取图片尺寸
+      try {
+        // 检查是否为Node.js环境
+        if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+          // 动态导入所需模块（ES6方式）
+          const [axiosModule, imageSizeModule] = await Promise.all([
+            this.importAxios(),
+            import('image-size')
+          ]);
+          
+          const axios = axiosModule.default || axiosModule;
+          const sizeOf = imageSizeModule.default || imageSizeModule;
+          
+          const response = await axios({
+            method: 'get',
+            url: imageUrl,
+            responseType: 'arraybuffer',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+            },
+            timeout: 10000
+          });
+          
+          const dimensions = sizeOf(Buffer.from(response.data));
+          
+          return {
+            width: dimensions.width,
+            height: dimensions.height,
+            aspectRatio: dimensions.width / dimensions.height
+          };
+        } else {
+          throw new Error('Not in Node.js environment');
+        }
+      } catch (error) {
+        this.log(`无法获取图片尺寸: ${error.message}`);
+        // 如果获取失败，返回默认值
+        return {
+          width: 0,
+          height: 0,
+          aspectRatio: 1
+        };
+      }
+    }
+  }
+
+  /**
+   * 检查图片是否符合头图尺寸要求
+   * @param {string} imageUrl - 图片URL
+   * @param {number} minWidth - 最小宽度，默认200
+   * @param {number} minHeight - 最小高度，默认200
+   * @returns {Promise<Object>} 验证结果
+   */
+  async isValidHeadImage(imageUrl, minWidth = 200, minHeight = 200) {
+    try {
+      const dimensions = await this.getImageDimensions(imageUrl);
+      const isValid = dimensions.width >= minWidth && dimensions.height >= minHeight;
+      
+      this.log(`图片尺寸检查: ${imageUrl.substring(0, 60)}...`, {
+        width: dimensions.width,
+        height: dimensions.height,
+        minWidth,
+        minHeight,
+        isValid
+      });
+      
+      return {
+        isValid,
+        dimensions
+      };
+    } catch (error) {
+      this.log(`图片尺寸检查失败: ${error.message}`);
+      return {
+        isValid: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * 查找符合尺寸要求的头图
+   * @param {Array} images - 图片数组
+   * @param {number} minWidth - 最小宽度，默认200
+   * @param {number} minHeight - 最小高度，默认200
+   * @returns {Promise<Object>} 查找结果
+   */
+  async findValidHeadImage(images, minWidth = 200, minHeight = 200) {
+    this.log(`查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`);
+    
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i];
+      this.log(`检查第 ${i + 1} 张图片...`);
+      
+      const validationResult = await this.isValidHeadImage(image.src, minWidth, minHeight);
+      
+      if (validationResult.isValid) {
+        this.log(`找到符合要求的头图: 索引 ${i}, 尺寸 ${validationResult.dimensions.width}x${validationResult.dimensions.height}`);
+        return {
+          image,
+          index: i,
+          dimensions: validationResult.dimensions
+        };
+      } else {
+        this.log(`第 ${i + 1} 张图片不符合尺寸要求`);
+      }
+    }
+    
+    this.log('未找到符合尺寸要求的头图');
+    return null;
+  }
+
+  /**
    * 处理头图上传
    * @param {Object} article - 文章数据
    * @param {Object} advancedSettings - 高级设置
@@ -409,17 +547,56 @@ export class StrapiIntegration {
       return article;
     }
 
-    const headImgIndex = advancedSettings.headImgIndex || 0;
-    const targetImage = article.images[headImgIndex];
-
+    // 🔥 新增：根据尺寸要求查找合适的头图
+    const minWidth = 200;  // 最小宽度
+    const minHeight = 200; // 最小高度
+    
+    this.log(`查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`);
+    
+    let targetImage;
+    let targetIndex;
+    let imageDimensions;
+    
+    // 如果指定了头图索引，先检查该索引的图片
+    if (advancedSettings.headImgIndex !== undefined && advancedSettings.headImgIndex >= 0) {
+      const specifiedIndex = advancedSettings.headImgIndex;
+      const specifiedImage = article.images[specifiedIndex];
+      
+      if (specifiedImage) {
+        this.log(`检查指定的头图索引 ${specifiedIndex}...`);
+        const validationResult = await this.isValidHeadImage(specifiedImage.src, minWidth, minHeight);
+        
+        if (validationResult.isValid) {
+          targetImage = specifiedImage;
+          targetIndex = specifiedIndex;
+          imageDimensions = validationResult.dimensions;
+          this.log(`指定索引的图片符合要求: ${imageDimensions.width}x${imageDimensions.height}`);
+        } else {
+          this.log(`指定索引的图片不符合尺寸要求，将搜索其他图片...`);
+        }
+      }
+    }
+    
+    // 如果指定索引的图片不符合要求，或者没有指定索引，则搜索所有图片
     if (!targetImage) {
-      this.log(`未找到索引为 ${headImgIndex} 的图片作为头图`);
-      return article;
+      const validHeadImageResult = await this.findValidHeadImage(article.images, minWidth, minHeight);
+      
+      if (validHeadImageResult) {
+        targetImage = validHeadImageResult.image;
+        targetIndex = validHeadImageResult.index;
+        imageDimensions = validHeadImageResult.dimensions;
+      } else {
+        this.log('没有找到符合尺寸要求的头图，跳过头图处理');
+        return {
+          ...article,
+          headImageError: `未找到符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`
+        };
+      }
     }
 
+    this.log(`选择第 ${targetIndex + 1} 张图片作为头图，尺寸: ${imageDimensions.width}x${imageDimensions.height}`);
+
     try {
-      this.log(`处理头图，索引: ${headImgIndex}`);
-      
       // 下载图片数据
       const imageData = await this.downloadImage(targetImage.src);
       const filename = this.generateHeadImageFilename(article.title, targetImage.src);
@@ -434,7 +611,11 @@ export class StrapiIntegration {
         }
       );
 
-      this.log('头图上传成功', { filename, id: uploadResult.id });
+      this.log('头图上传成功', { 
+        filename, 
+        id: uploadResult.id,
+        dimensions: `${imageDimensions.width}x${imageDimensions.height}`
+      });
 
       // 获取完整的图片URL
       const fullImageUrl = this.getFullImageUrl(uploadResult);
@@ -455,6 +636,8 @@ export class StrapiIntegration {
           url: fullImageUrl,
           filename: uploadResult.name,
           originalUrl: targetImage.src,
+          originalDimensions: imageDimensions,
+          selectedIndex: targetIndex,
           uploadedAt: new Date().toISOString()
         }
       };

@@ -1,0 +1,1 @@
+头图尺寸检查功能已添加完成！修改文件包括src/background.js和shared/core/integrations/strapi-integration.js，现在只有宽度>=200px且高度>=200px的图片才能被设置为头图。

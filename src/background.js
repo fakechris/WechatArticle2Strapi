@@ -1411,6 +1411,82 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// 🔥 新增：获取图片实际尺寸
+async function getImageDimensions(imageUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    
+    img.onload = function() {
+      resolve({
+        width: this.naturalWidth,
+        height: this.naturalHeight,
+        aspectRatio: this.naturalWidth / this.naturalHeight
+      });
+    };
+    
+    img.onerror = function() {
+      reject(new Error(`无法加载图片: ${imageUrl}`));
+    };
+    
+    // 设置跨域支持
+    img.crossOrigin = 'anonymous';
+    img.src = imageUrl;
+  });
+}
+
+// 🔥 新增：检查图片是否符合头图尺寸要求
+async function isValidHeadImage(imageUrl, minWidth = 200, minHeight = 200) {
+  try {
+    const dimensions = await getImageDimensions(imageUrl);
+    console.log(`📏 图片尺寸检查:`, {
+      url: imageUrl.substring(0, 60) + '...',
+      width: dimensions.width,
+      height: dimensions.height,
+      minWidth,
+      minHeight,
+      isValid: dimensions.width >= minWidth && dimensions.height >= minHeight
+    });
+    
+    return {
+      isValid: dimensions.width >= minWidth && dimensions.height >= minHeight,
+      dimensions
+    };
+  } catch (error) {
+    console.warn(`⚠️ 图片尺寸检查失败: ${error.message}`);
+    // 如果无法获取尺寸，返回false（不符合要求）
+    return {
+      isValid: false,
+      error: error.message
+    };
+  }
+}
+
+// 🔥 新增：查找符合尺寸要求的头图
+async function findValidHeadImage(images, minWidth = 200, minHeight = 200) {
+  console.log(`🔍 开始查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`);
+  
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    console.log(`📸 检查第 ${i + 1} 张图片...`);
+    
+    const validationResult = await isValidHeadImage(image.src, minWidth, minHeight);
+    
+    if (validationResult.isValid) {
+      console.log(`✅ 找到符合要求的头图: 索引 ${i}, 尺寸 ${validationResult.dimensions.width}x${validationResult.dimensions.height}`);
+      return {
+        image,
+        index: i,
+        dimensions: validationResult.dimensions
+      };
+    } else {
+      console.log(`❌ 第 ${i + 1} 张图片不符合尺寸要求`);
+    }
+  }
+  
+  console.log('❌ 未找到符合尺寸要求的头图');
+  return null;
+}
+
 // 🔥 新增：处理头图上传
 async function processHeadImage(article, advancedSettings) {
   console.log('🖼️ 开始处理头图...');
@@ -1421,16 +1497,55 @@ async function processHeadImage(article, advancedSettings) {
     return article;
   }
   
-  // 获取头图配置
-  const headImgIndex = advancedSettings.headImgIndex || 0; // 默认使用第一张图片
-  const targetImage = article.images[headImgIndex];
+  // 🔥 新增：根据尺寸要求查找合适的头图
+  const minWidth = 200;  // 最小宽度
+  const minHeight = 200; // 最小高度
   
-  if (!targetImage) {
-    console.log(`⚠️ 无法找到索引为 ${headImgIndex} 的图片，跳过头图处理`);
-    return article;
+  console.log(`🎯 查找符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`);
+  
+  let targetImage;
+  let targetIndex;
+  let imageDimensions;
+  
+  // 如果指定了头图索引，先检查该索引的图片
+  if (advancedSettings.headImgIndex !== undefined && advancedSettings.headImgIndex >= 0) {
+    const specifiedIndex = advancedSettings.headImgIndex;
+    const specifiedImage = article.images[specifiedIndex];
+    
+    if (specifiedImage) {
+      console.log(`🎯 检查指定的头图索引 ${specifiedIndex}...`);
+      const validationResult = await isValidHeadImage(specifiedImage.src, minWidth, minHeight);
+      
+      if (validationResult.isValid) {
+        targetImage = specifiedImage;
+        targetIndex = specifiedIndex;
+        imageDimensions = validationResult.dimensions;
+        console.log(`✅ 指定索引的图片符合要求: ${imageDimensions.width}x${imageDimensions.height}`);
+      } else {
+        console.log(`❌ 指定索引的图片不符合尺寸要求，将搜索其他图片...`);
+      }
+    }
   }
   
-  console.log(`🎯 选择第 ${headImgIndex + 1} 张图片作为头图: ${targetImage.src.substring(0, 60)}...`);
+  // 如果指定索引的图片不符合要求，或者没有指定索引，则搜索所有图片
+  if (!targetImage) {
+    const validHeadImageResult = await findValidHeadImage(article.images, minWidth, minHeight);
+    
+    if (validHeadImageResult) {
+      targetImage = validHeadImageResult.image;
+      targetIndex = validHeadImageResult.index;
+      imageDimensions = validHeadImageResult.dimensions;
+    } else {
+      console.log('⚠️ 没有找到符合尺寸要求的头图，跳过头图处理');
+      return {
+        ...article,
+        headImageError: `未找到符合尺寸要求的头图 (最小: ${minWidth}x${minHeight})`
+      };
+    }
+  }
+  
+  console.log(`🎯 选择第 ${targetIndex + 1} 张图片作为头图: ${targetImage.src.substring(0, 60)}...`);
+  console.log(`📏 头图尺寸: ${imageDimensions.width}x${imageDimensions.height}`);
   
   try {
     // 验证图片URL是否有效
@@ -1440,6 +1555,11 @@ async function processHeadImage(article, advancedSettings) {
     
     // 分析图片信息
     const imageInfo = await analyzeImageInfo(targetImage.src);
+    
+    // 添加尺寸信息到imageInfo
+    imageInfo.width = imageDimensions.width;
+    imageInfo.height = imageDimensions.height;
+    imageInfo.aspectRatio = imageDimensions.aspectRatio;
     
     // 下载图片
     const tab = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1473,6 +1593,7 @@ async function processHeadImage(article, advancedSettings) {
     
     const uploadedFile = uploadResult[0];
     console.log(`✨ 头图上传成功: ${uploadedFile.name} (ID: ${uploadedFile.id})`);
+    console.log(`📏 头图最终尺寸: ${imageDimensions.width}x${imageDimensions.height}`);
     
     // 初始化 allImageIds 数组，确保头图ID包含在其中
     const allImageIds = article.allImageIds || [];
@@ -1495,6 +1616,8 @@ async function processHeadImage(article, advancedSettings) {
         width: uploadedFile.width,
         height: uploadedFile.height,
         originalUrl: targetImage.src,
+        originalDimensions: imageDimensions,
+        selectedIndex: targetIndex,
         uploadedAt: new Date().toISOString()
       }
     };

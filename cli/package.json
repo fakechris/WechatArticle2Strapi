@@ -32,6 +32,7 @@
     "defuddle": "^0.6.4",
     "form-data": "^4.0.0",
     "fs-extra": "^11.1.1",
+    "image-size": "^2.0.2",
     "jsdom": "^23.0.0",
     "limax": "^4.1.0",
     "mime-types": "^2.1.35",
