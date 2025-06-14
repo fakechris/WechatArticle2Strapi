@@ -157,9 +157,16 @@ export class StrapiIntegration {
     this.addOptionalField(data, fieldMap, 'digest', article.digest, 500);
     this.addOptionalField(data, fieldMap, 'sourceUrl', article.url);
     
-    // 图片字段
-    if (article.processedImages && article.processedImages.length > 0 && fieldMap.images) {
-      data[fieldMap.images] = article.processedImages;
+    // 图片字段 - 修改为支持所有图片ID数组
+    if (article.allImageIds && article.allImageIds.length > 0 && fieldMap.images) {
+      // Strapi v4 多选media字段格式：ID数组
+      data[fieldMap.images] = article.allImageIds.map(id => Number(id));
+      
+      this.log('设置图片数组字段', { 
+        field: fieldMap.images, 
+        imageIds: article.allImageIds,
+        finalValue: data[fieldMap.images]
+      });
     }
     
     // 头图字段 - 修复Strapi media字段格式
@@ -298,7 +305,7 @@ export class StrapiIntegration {
     
     // 添加文件信息（如果有）
     if (imageInfo.alt) {
-      // Strapi upload API的正确格式：不使用fileInfo，而是在上传成功后更新
+      // Strapi upload API的正确格式：不使用fileInfo，而是在上传成功后更新元数据
       // 这里我们先简单上传，成功后可以通过API更新元数据
       this.log('跳过fileInfo（将在上传后设置元数据）', { 
         alt: imageInfo.alt,
@@ -432,10 +439,17 @@ export class StrapiIntegration {
       // 获取完整的图片URL
       const fullImageUrl = this.getFullImageUrl(uploadResult);
 
+      // 初始化 allImageIds 数组，确保头图ID包含在其中
+      const allImageIds = article.allImageIds || [];
+      if (!allImageIds.includes(uploadResult.id)) {
+        allImageIds.unshift(uploadResult.id); // 将头图ID放在数组第一位
+      }
+
       return {
         ...article,
         headImageId: uploadResult.id,
         headImageUrl: fullImageUrl,
+        allImageIds: allImageIds,
         headImageInfo: {
           id: uploadResult.id,
           url: fullImageUrl,
@@ -474,6 +488,9 @@ export class StrapiIntegration {
     const processedImages = [];
     let updatedContent = article.content;
     
+    // 初始化 allImageIds 数组，保留已有的头图ID
+    const allImageIds = article.allImageIds || [];
+    
     // 并发处理图片（3张一批）
     const batchSize = 3;
     for (let i = 0; i < imagesToProcess.length; i += batchSize) {
@@ -492,6 +509,11 @@ export class StrapiIntegration {
           const processedImage = result.value;
           processedImages.push(processedImage);
           
+          // 将图片ID添加到 allImageIds 数组中（避免重复）
+          if (!allImageIds.includes(processedImage.id)) {
+            allImageIds.push(processedImage.id);
+          }
+          
           // 替换内容中的图片链接
           updatedContent = this.smartReplaceImageInContent(
             updatedContent, 
@@ -499,7 +521,10 @@ export class StrapiIntegration {
             processedImage.url
           );
           
-          this.log(`图片处理成功`, { filename: processedImage.name });
+          this.log(`图片处理成功`, { 
+            filename: processedImage.name,
+            id: processedImage.id 
+          });
         } else {
           this.log(`图片处理失败`, { 
             src: originalImage.src.substring(0, 60) + '...', 
@@ -515,11 +540,13 @@ export class StrapiIntegration {
     }
 
     this.log(`图片处理完成，成功: ${processedImages.length}/${imagesToProcess.length}`);
+    this.log(`所有图片ID数组`, { allImageIds });
 
     return {
       ...article,
       content: updatedContent,
-      processedImages: processedImages
+      processedImages: processedImages,
+      allImageIds: allImageIds
     };
   }
 
@@ -884,37 +911,42 @@ export class StrapiIntegration {
       let processedArticle = article;
       const advancedSettings = this.config.advancedSettings || {};
       
-      // 处理头图（如果启用）
-      if (advancedSettings.uploadHeadImg && article.images && article.images.length > 0) {
-        this.log('开始处理头图上传', {
-          uploadHeadImg: advancedSettings.uploadHeadImg,
-          imageCount: article.images.length,
-          headImgIndex: advancedSettings.headImgIndex || 0
-        });
-        processedArticle = await this.processHeadImage(processedArticle, advancedSettings);
-        this.log('头图处理完成', {
-          hasHeadImageId: !!processedArticle.headImageId,
-          headImageId: processedArticle.headImageId,
-          headImageUrl: processedArticle.headImageUrl
-        });
-      } else {
-        this.log('跳过头图处理', {
-          uploadHeadImg: advancedSettings.uploadHeadImg,
-          hasImages: !!(article.images && article.images.length > 0),
-          imageCount: article.images ? article.images.length : 0,
-          reason: !advancedSettings.uploadHeadImg ? '头图上传未启用' : '没有图片'
-        });
-      }
-      
-      // 处理文章图片（如果启用）
-      if (advancedSettings.uploadImages && article.images && article.images.length > 0) {
-        this.log('开始处理文章图片上传');
-        processedArticle = await this.processArticleImages(processedArticle, advancedSettings);
+      // 处理所有图片上传（包括头图和内容图片）
+      if ((advancedSettings.uploadHeadImg || advancedSettings.uploadImages) && article.images && article.images.length > 0) {
+        
+        // 先处理头图（如果启用）
+        if (advancedSettings.uploadHeadImg) {
+          this.log('开始处理头图上传', {
+            uploadHeadImg: advancedSettings.uploadHeadImg,
+            imageCount: article.images.length,
+            headImgIndex: advancedSettings.headImgIndex || 0
+          });
+          processedArticle = await this.processHeadImage(processedArticle, advancedSettings);
+          this.log('头图处理完成', {
+            hasHeadImageId: !!processedArticle.headImageId,
+            headImageId: processedArticle.headImageId,
+            headImageUrl: processedArticle.headImageUrl
+          });
+        }
+        
+        // 再处理文章图片（如果启用）
+        if (advancedSettings.uploadImages) {
+          this.log('开始处理文章图片上传');
+          processedArticle = await this.processArticleImages(processedArticle, advancedSettings);
+        }
+        
       } else if (article.images && article.images.length > 0) {
         // 有图片但未启用上传功能
         this.log('⚠️ 发现图片但未启用图片上传功能，图片将被跳过', {
           imageCount: article.images.length,
+          uploadHeadImg: advancedSettings.uploadHeadImg,
           uploadImages: advancedSettings.uploadImages
+        });
+      } else {
+        this.log('跳过图片处理', {
+          hasImages: !!(article.images && article.images.length > 0),
+          imageCount: article.images ? article.images.length : 0,
+          reason: '没有图片或未启用图片上传'
         });
       }
 

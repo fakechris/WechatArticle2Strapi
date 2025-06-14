@@ -443,10 +443,23 @@ async function processArticleImages(article) {
     ⏱️ 耗时: ${processingTime}ms
     🚀 平均速度: ${Math.round(processingTime / progressTracker.total)}ms/图片`);
 
+  // 初始化 allImageIds 数组，保留已有的头图ID
+  const allImageIds = article.allImageIds || [];
+  
+  // 收集所有成功上传的图片ID
+  processedImages.forEach(processedImage => {
+    if (processedImage.id && !allImageIds.includes(processedImage.id)) {
+      allImageIds.push(processedImage.id);
+    }
+  });
+
+  console.log(`所有图片ID数组:`, { allImageIds });
+
   return {
     ...article,
     content: updatedContent,
     processedImages,
+    allImageIds: allImageIds,
     imageProcessingStats: {
       total: progressTracker.total,
       successful: progressTracker.successful,
@@ -485,8 +498,50 @@ async function sendToStrapi(article) {
       throw new Error(`Configuration validation failed: ${validation.errors.join(', ')}`);
     }
     
+    // 🔥 新增：处理图片上传（如果启用）
+    let processedArticle = article;
+    const advancedSettings = config.advancedSettings || {};
+    
+    // 处理所有图片上传（包括头图和内容图片）
+    if ((advancedSettings.uploadHeadImg || advancedSettings.uploadImages) && article.images && article.images.length > 0) {
+      
+      // 先处理头图（如果启用）
+      if (advancedSettings.uploadHeadImg) {
+        console.log('开始处理头图上传', {
+          uploadHeadImg: advancedSettings.uploadHeadImg,
+          imageCount: article.images.length,
+          headImgIndex: advancedSettings.headImgIndex || 0
+        });
+        processedArticle = await processHeadImage(processedArticle, advancedSettings);
+        console.log('头图处理完成', {
+          hasHeadImageId: !!processedArticle.headImageId,
+          headImageId: processedArticle.headImageId
+        });
+      }
+      
+      // 再处理文章图片（如果启用）
+      if (advancedSettings.uploadImages) {
+        console.log('开始处理文章图片上传');
+        processedArticle = await processArticleImages(processedArticle);
+      }
+      
+    } else if (article.images && article.images.length > 0) {
+      // 有图片但未启用上传功能
+      console.log('⚠️ 发现图片但未启用图片上传功能，图片将被跳过', {
+        imageCount: article.images.length,
+        uploadHeadImg: advancedSettings.uploadHeadImg,
+        uploadImages: advancedSettings.uploadImages
+      });
+    } else {
+      console.log('跳过图片处理', {
+        hasImages: !!(article.images && article.images.length > 0),
+        imageCount: article.images ? article.images.length : 0,
+        reason: '没有图片或未启用图片上传'
+      });
+    }
+    
     // 使用统一的字段映射构建数据
-    const articleData = buildUnifiedStrapiData(article, config);
+    const articleData = buildUnifiedStrapiData(processedArticle, config);
     
     console.log('Built article data with unified logic:', {
       fieldMappingEnabled: config.fieldMapping?.enabled || false,
@@ -754,15 +809,30 @@ function buildUnifiedStrapiData(article, config) {
   addUnifiedOptionalField(data, fieldMap, 'digest', article.digest, 500);
   addUnifiedOptionalField(data, fieldMap, 'sourceUrl', article.url);
   
-  // 图片字段
-  if (article.processedImages && article.processedImages.length > 0 && fieldMap.images) {
-    data[fieldMap.images] = article.processedImages;
+  // 图片字段 - 修改为支持所有图片ID数组
+  if (article.allImageIds && article.allImageIds.length > 0 && fieldMap.images) {
+    // Strapi v4 多选media字段格式：ID数组
+    data[fieldMap.images] = article.allImageIds.map(id => Number(id));
+    
+    console.log('设置图片数组字段:', { 
+      field: fieldMap.images, 
+      imageIds: article.allImageIds,
+      finalValue: data[fieldMap.images]
+    });
   }
   
-  // 头图字段
+  // 头图字段 - 修复Strapi media字段格式
   if (article.headImageId && fieldMap.headImg) {
-    data[fieldMap.headImg] = article.headImageId;
-    console.log('设置头图字段:', { field: fieldMap.headImg, id: article.headImageId });
+    // Strapi v4 单选media字段格式：直接使用数字ID
+    const headImgValue = Number(article.headImageId);
+    data[fieldMap.headImg] = headImgValue;
+    
+    console.log('设置头图字段:', { 
+      field: fieldMap.headImg, 
+      originalId: article.headImageId,
+      finalValue: headImgValue,
+      valueType: typeof headImgValue
+    });
   }
   
   // Slug字段
@@ -1404,11 +1474,18 @@ async function processHeadImage(article, advancedSettings) {
     const uploadedFile = uploadResult[0];
     console.log(`✨ 头图上传成功: ${uploadedFile.name} (ID: ${uploadedFile.id})`);
     
+    // 初始化 allImageIds 数组，确保头图ID包含在其中
+    const allImageIds = article.allImageIds || [];
+    if (!allImageIds.includes(uploadedFile.id)) {
+      allImageIds.unshift(uploadedFile.id); // 将头图ID放在数组第一位
+    }
+    
     // 返回包含头图信息的文章对象
     return {
       ...article,
       headImageId: uploadedFile.id,
       headImageUrl: uploadedFile.url,
+      allImageIds: allImageIds,
       headImageInfo: {
         id: uploadedFile.id,
         url: uploadedFile.url,
