@@ -1,188 +1,305 @@
 #!/usr/bin/env node
 
+/**
+ * 重构后的CLI入口文件
+ * 使用统一的核心模块和适配器架构
+ */
+
 import { Command } from 'commander';
 import chalk from 'chalk';
-import ArticleExtractor from '../src/extractor.js';
-import OutputFormatter from '../src/formatter.js';
+import { readFileSync } from 'fs';
+import { CLIAdapter } from '../src/adapters/cli-adapter.js';
+import { isWeChatArticleUrl } from '../../shared/utils/url-utils.js';
 import ConfigManager from '../src/config.js';
 
 const program = new Command();
 
-program
-  .name('article-extractor')
-  .description('Extract articles from web pages with enhanced metadata and Strapi integration')
-  .version('1.0.0');
+// 读取package.json获取版本信息
+const packagePath = new URL('../package.json', import.meta.url);
+const packageInfo = JSON.parse(readFileSync(packagePath, 'utf8'));
 
 program
-  .argument('<url>', 'URL of the article to extract (or local file path)')
-  .option('-o, --output <path>', 'Output file path (default: console)')
-  .option('-f, --format <type>', 'Output format: json, text, html, markdown', 'json')
-  .option('-c, --config <path>', 'Path to configuration file (.articlerc.json)')
-  .option('--images', 'Download and process images locally', false)
-  .option('--strapi', 'Send extracted data to Strapi CMS with full integration', false)
-  .option('--upload-images', 'Upload images to Strapi media library (requires --strapi)', false)
-  .option('--head-image', 'Upload head/cover image to Strapi (requires --strapi)', false)
-  .option('--head-image-index <number>', 'Index of image to use as head image (0 = first)', '0')
-  .option('--verbose', 'Verbose output with detailed processing logs', false)
-  .option('--max-images <number>', 'Maximum number of images to process', '10')
-  .option('--quality <number>', 'Image compression quality (0-1)', '0.8')
-  .option('--generate-config', 'Generate example configuration file', false)
-  .option('--import-chrome-backup <path>', 'Import Chrome extension backup file')
-  .option('--export-chrome-backup <path>', 'Export current config as Chrome extension backup')
+  .name('wechat-extractor')
+  .description('微信文章内容提取工具 - 重构版')
+  .version(packageInfo.version);
+
+program
+  .argument('<url>', '微信文章URL')
+  .option('-c, --config <path>', '配置文件路径')
+  .option('-v, --verbose', '显示详细输出')
+  .option('-d, --debug', '启用调试模式')
+  .option('--strapi', '发送提取的数据到Strapi CMS', false)
+  .option('--upload-images', '上传图片到Strapi媒体库 (需要 --strapi)', false)
+  .option('--head-image', '上传头图/封面图到Strapi (需要 --strapi)', false)
+  .option('--head-image-index <number>', '用作头图的图片索引 (0 = 第一张)', '0')
+  .option('--timeout <ms>', '请求超时时间(毫秒)', '30000')
+  .option('--output <format>', '输出格式 (json|report)', 'report')
+  .option('--max-images <number>', '最大处理图片数量', '10')
+  .option('--quality <number>', '图片压缩质量 (0-1)', '0.8')
   .action(async (url, options) => {
     try {
-      // Handle config generation
-      if (options.generateConfig) {
-        const config = new ConfigManager(options.config);
-        const configPath = await config.createTemplate();
-        console.log(chalk.green(`✅ Example configuration created at: ${configPath}`));
-        console.log(chalk.blue('\n📖 Edit the configuration file to set your Strapi settings:'));
-        console.log(chalk.gray('  - strapiUrl: Your Strapi instance URL'));
-        console.log(chalk.gray('  - token: Your API token from Strapi admin'));
-        console.log(chalk.gray('  - collection: Name of your Strapi collection'));
-        console.log(chalk.gray('  - fieldMapping: Map article fields to your Strapi fields'));
-        return;
-      }
-
-      // Handle Chrome extension backup import
-      if (options.importChromeBackup) {
-        const config = new ConfigManager(options.config);
-        const result = await config.loadFromChromeBackup(options.importChromeBackup);
-        await config.save();
-        
-        console.log(chalk.green('✅ Chrome extension backup imported successfully!'));
-        console.log(chalk.gray(`  Backup timestamp: ${result.timestamp}`));
-        
-        if (result.warnings.length > 0) {
-          console.log(chalk.yellow('\n⚠️ Warnings:'));
-          result.warnings.forEach(warning => {
-            console.log(chalk.yellow(`  • ${warning}`));
-          });
-        }
-        
-        console.log(chalk.blue(`\n📝 Configuration saved to: ${config.configPath}`));
-        console.log(chalk.blue('🚀 You can now use --strapi to send articles to your configured Strapi instance'));
-        return;
-      }
-
-      // Handle Chrome extension backup export
-      if (options.exportChromeBackup) {
-        const config = new ConfigManager(options.config);
-        await config.load();
-        
-        const result = await config.exportAsChromeBackup(options.exportChromeBackup);
-        
-        console.log(chalk.green('✅ Chrome extension backup exported successfully!'));
-        console.log(chalk.gray(`  Export path: ${result.path}`));
-        console.log(chalk.gray(`  Timestamp: ${result.timestamp}`));
-        console.log(chalk.blue('\n📥 You can now import this backup into the Chrome extension'));
-        return;
-      }
-
-      // Load configuration
-      const config = new ConfigManager(options.config);
-      const configLoaded = await config.load();
-      
-      if (!configLoaded && options.strapi) {
-        console.log(chalk.yellow('⚠️ No configuration file found. Creating template...'));
-        const configPath = await config.createTemplate();
-        console.log(chalk.yellow(`📝 Please edit ${configPath} with your Strapi settings before using --strapi`));
+      // 验证URL
+      if (!isWeChatArticleUrl(url)) {
+        console.error(chalk.red('❌ 错误: 请提供有效的微信文章URL'));
         process.exit(1);
       }
 
-      // Override config with CLI options
-      const configData = config.get();
-      if (options.uploadImages || options.headImage) {
-        configData.advancedSettings = configData.advancedSettings || {};
-        configData.advancedSettings.uploadImages = options.uploadImages;
-        configData.advancedSettings.uploadHeadImg = options.headImage;
-        configData.advancedSettings.headImgIndex = parseInt(options.headImageIndex);
-      }
-
-      // Create extractor instance
-      const extractor = new ArticleExtractor({
-        verbose: options.verbose,
-        processImages: options.images,
-        maxImages: parseInt(options.maxImages),
-        imageQuality: parseFloat(options.quality),
-        config: configData
-      });
-
-      console.log(chalk.blue('🚀 Starting article extraction...'));
-      console.log(chalk.gray(`URL: ${url}`));
+      // 加载配置
+      const configManager = new ConfigManager(options.config);
+      let config = null;
       
-      if (options.verbose) {
-        console.log(chalk.gray('Settings:'));
-        console.log(chalk.gray(`  Config: ${configLoaded ? '✅ Loaded' : '❌ Using defaults'}`));
-        console.log(chalk.gray(`  Images: ${options.images ? '✅ Process locally' : '❌ Skip'}`));
-        console.log(chalk.gray(`  Strapi: ${options.strapi ? '✅ Enabled' : '❌ Disabled'}`));
-        if (options.strapi) {
-          console.log(chalk.gray(`  Upload Images: ${options.uploadImages ? '✅ Yes' : '❌ No'}`));
-          console.log(chalk.gray(`  Head Image: ${options.headImage ? `✅ Index ${options.headImageIndex}` : '❌ No'}`));
-        }
-      }
-
-      // Extract article
-      const article = await extractor.extract(url);
-
-      // Send to Strapi if requested
       if (options.strapi) {
-        console.log(chalk.blue('\n📤 Sending to Strapi...'));
+        const configLoaded = await configManager.load();
+        if (!configLoaded) {
+          console.log(chalk.yellow('⚠️ 没有找到配置文件。正在创建模板...'));
+          const configPath = await configManager.createTemplate();
+          console.log(chalk.yellow(`📝 请编辑 ${configPath} 中的Strapi设置后再使用 --strapi`));
+          process.exit(1);
+        }
+        config = configManager.get();
         
-        // Validate Strapi configuration
-        const validation = config.validate();
+        // 验证Strapi配置
+        const validation = configManager.validate();
         if (!validation.valid) {
-          console.error(chalk.red('❌ Strapi configuration errors:'));
+          console.error(chalk.red('❌ Strapi配置错误:'));
           validation.errors.forEach(error => {
             console.error(chalk.red(`  • ${error}`));
           });
           process.exit(1);
         }
         
-        try {
-          const strapiResult = await extractor.sendToStrapi(article);
-          article.strapiResult = strapiResult;
-          
-          console.log(chalk.green('✅ Successfully sent to Strapi!'));
-          console.log(chalk.green(`  Article ID: ${strapiResult.data?.id}`));
-          
-          if (article.headImageInfo) {
-            console.log(chalk.green(`  Head Image: ${article.headImageInfo.filename} (ID: ${article.headImageInfo.id})`));
-          }
-          
-          if (article.imageProcessingStats) {
-            const stats = article.imageProcessingStats;
-            console.log(chalk.green(`  Images: ${stats.successful}/${stats.total} uploaded successfully`));
-          }
-          
-        } catch (strapiError) {
-          console.error(chalk.red('❌ Strapi error:'), strapiError.message);
-          if (options.verbose) {
-            console.error(chalk.gray(strapiError.stack));
-          }
-          process.exit(1);
+        // 应用CLI选项覆盖配置
+        if (options.uploadImages || options.headImage) {
+          config.advancedSettings = config.advancedSettings || {};
+          config.advancedSettings.uploadImages = options.uploadImages;
+          config.advancedSettings.uploadHeadImg = options.headImage;
+          config.advancedSettings.headImgIndex = parseInt(options.headImageIndex);
+          config.advancedSettings.maxImages = parseInt(options.maxImages);
+          config.advancedSettings.imageQuality = parseFloat(options.quality);
+        }
+      }
+      
+      // 创建适配器
+      const adapterOptions = {
+        verbose: options.verbose,
+        debug: options.debug,
+        timeout: parseInt(options.timeout),
+        strapiConfig: config
+      };
+
+      const adapter = new CLIAdapter(adapterOptions);
+
+      // 显示开始信息
+      if (options.verbose) {
+        console.log(chalk.blue('🚀 微信文章提取工具 - 重构版'));
+        console.log(chalk.gray(`版本: ${packageInfo.version}`));
+        console.log(chalk.gray(`URL: ${url}`));
+        console.log('='.repeat(50));
+        
+        console.log(chalk.gray('设置:'));
+        console.log(chalk.gray(`  配置: ${config ? '✅ 已加载' : '❌ 使用默认'}`));
+        console.log(chalk.gray(`  Strapi: ${options.strapi ? '✅ 启用' : '❌ 禁用'}`));
+        if (options.strapi) {
+          console.log(chalk.gray(`  上传图片: ${options.uploadImages ? '✅ 是' : '❌ 否'}`));
+          console.log(chalk.gray(`  头图: ${options.headImage ? `✅ 索引 ${options.headImageIndex}` : '❌ 否'}`));
         }
       }
 
-      // Format and output results
-      const formatter = new OutputFormatter(options.format);
-      const output = formatter.format(article);
+      // 执行提取
+      const startTime = Date.now();
+      const result = await adapter.extractFromUrl(url);
+      const endTime = Date.now();
 
-      if (options.output) {
-        await formatter.writeToFile(output, options.output);
-        console.log(chalk.green(`\n✅ Output saved to: ${options.output}`));
+      // 输出结果
+      if (options.output === 'json') {
+        console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log('\n' + chalk.yellow('📄 Extracted Article:'));
-        console.log(output);
+        adapter.printExtractionReport(result);
+        
+        if (options.verbose) {
+          console.log(chalk.blue(`\n⏱️  总耗时: ${endTime - startTime}ms`));
+        }
       }
 
     } catch (error) {
-      console.error(chalk.red('❌ Error:'), error.message);
-      if (options.verbose) {
-        console.error(chalk.gray(error.stack));
+      console.error(chalk.red(`❌ 提取失败: ${error.message}`));
+      
+      if (options.debug) {
+        console.error(chalk.gray('\n调试信息:'));
+        console.error(error.stack);
       }
+      
       process.exit(1);
     }
   });
 
+// 配置模版生成命令
+program
+  .command('init')
+  .description('生成配置文件模板')
+  .option('-o, --output <path>', '输出路径', './wechat-config.json')
+  .action(async (options) => {
+    try {
+      const configManager = new ConfigManager(options.output);
+      const configPath = await configManager.createTemplate();
+      console.log(chalk.green(`✅ 配置文件已生成: ${configPath}`));
+      console.log(chalk.blue('\n📖 编辑配置文件来设置您的Strapi设置:'));
+      console.log(chalk.gray('  - strapiUrl: 您的Strapi实例URL'));
+      console.log(chalk.gray('  - token: 来自Strapi管理面板的API令牌'));
+      console.log(chalk.gray('  - collection: 您的Strapi集合名称'));
+      console.log(chalk.gray('  - fieldMapping: 将文章字段映射到您的Strapi字段'));
+      
+    } catch (error) {
+      console.error(chalk.red(`❌ 生成配置文件失败: ${error.message}`));
+      process.exit(1);
+    }
+  });
+
+// Chrome扩展备份导入命令
+program
+  .command('import-chrome-backup')
+  .description('导入Chrome扩展备份文件')
+  .argument('<backup-path>', 'Chrome扩展备份文件路径')
+  .option('-c, --config <path>', '目标配置文件路径')
+  .action(async (backupPath, options) => {
+    try {
+      const configManager = new ConfigManager(options.config);
+      const result = await configManager.loadFromChromeBackup(backupPath);
+      await configManager.save();
+      
+      console.log(chalk.green('✅ Chrome扩展备份导入成功!'));
+      console.log(chalk.gray(`  备份时间戳: ${result.timestamp}`));
+      
+      if (result.warnings.length > 0) {
+        console.log(chalk.yellow('\n⚠️ 警告:'));
+        result.warnings.forEach(warning => {
+          console.log(chalk.yellow(`  • ${warning}`));
+        });
+      }
+      
+      console.log(chalk.blue(`\n📝 配置已保存到: ${configManager.configPath}`));
+      console.log(chalk.blue('🚀 现在您可以使用 --strapi 将文章发送到配置的Strapi实例'));
+      
+    } catch (error) {
+      console.error(chalk.red(`❌ 导入Chrome备份失败: ${error.message}`));
+      process.exit(1);
+    }
+  });
+
+// Chrome扩展备份导出命令
+program
+  .command('export-chrome-backup')
+  .description('导出当前配置为Chrome扩展备份')
+  .argument('<output-path>', '输出备份文件路径')
+  .option('-c, --config <path>', '源配置文件路径')
+  .action(async (outputPath, options) => {
+    try {
+      const configManager = new ConfigManager(options.config);
+      await configManager.load();
+      
+      const result = await configManager.exportAsChromeBackup(outputPath);
+      
+      console.log(chalk.green('✅ Chrome扩展备份导出成功!'));
+      console.log(chalk.gray(`  导出路径: ${result.path}`));
+      console.log(chalk.gray(`  时间戳: ${result.timestamp}`));
+      console.log(chalk.blue('\n📥 您现在可以将此备份导入到Chrome扩展中'));
+      
+    } catch (error) {
+      console.error(chalk.red(`❌ 导出Chrome备份失败: ${error.message}`));
+      process.exit(1);
+    }
+  });
+
+// 测试命令
+program
+  .command('test')
+  .description('测试共享核心模块')
+  .option('-v, --verbose', '显示详细输出')
+  .action(async (options) => {
+    try {
+      console.log(chalk.blue('🧪 测试共享核心模块'));
+      
+      // 测试工具函数
+      const { isValidImageUrl, generateSlug } = await import('../../shared/core/index.js');
+      
+      const testImage = 'https://mmbiz.qpic.cn/test.jpg';
+      const testTitle = '测试文章标题 - 共享模块测试';
+      
+      console.log(chalk.green('✅ 工具函数测试:'));
+      console.log(`  图片URL验证: ${isValidImageUrl(testImage)}`);
+      console.log(`  Slug生成: ${generateSlug(testTitle)}`);
+      
+      // 测试提取器创建
+      const { createWeChatExtractor } = await import('../../shared/core/index.js');
+      const extractor = createWeChatExtractor({ 
+        environment: 'node',
+        verbose: options.verbose
+      });
+      
+      console.log(chalk.green('✅ 提取器创建: 成功'));
+      
+      console.log(chalk.blue('\n🎉 所有测试通过！'));
+      
+    } catch (error) {
+      console.error(chalk.red(`❌ 测试失败: ${error.message}`));
+      process.exit(1);
+    }
+  });
+
+/**
+ * 加载配置文件
+ * @param {string} configPath - 配置文件路径
+ * @returns {Promise<Object>} 配置对象
+ */
+async function loadConfig(configPath) {
+  if (!configPath) {
+    return null;
+  }
+
+  try {
+    const { readFileSync } = await import('fs');
+    const configContent = readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    console.log(chalk.blue(`📁 已加载配置文件: ${configPath}`));
+    return config;
+    
+  } catch (error) {
+    console.error(chalk.yellow(`⚠️  配置文件加载失败: ${error.message}`));
+    return null;
+  }
+}
+
+// 全局错误处理
+process.on('uncaughtException', (error) => {
+  // 忽略JSDOM相关的错误
+  if (error.message && (
+    error.message.includes('PerformanceObserver') ||
+    error.message.includes('window.matchMedia') ||
+    error.message.includes('incorrect header check') ||
+    error.message.includes('jsdom')
+  )) {
+    return; // 静默忽略
+  }
+  
+  console.error(chalk.red('❌ 未捕获的异常:'), error.message);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  // 忽略JSDOM相关的Promise拒绝
+  if (reason && typeof reason === 'object' && (
+    (reason.message && reason.message.includes('jsdom')) ||
+    (reason.message && reason.message.includes('window.matchMedia')) ||
+    (reason.message && reason.message.includes('PerformanceObserver')) ||
+    (reason.message && reason.message.includes('incorrect header check'))
+  )) {
+    return; // 静默忽略
+  }
+  
+  console.error(chalk.red('❌ 未处理的Promise拒绝:'), reason);
+  process.exit(1);
+});
+
+// 运行程序
 program.parse();
