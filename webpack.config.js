@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 export default {
   mode: 'production',
   entry: {
-    content: './src/content-bundled.js',
+    content: './src/content-bundled-fixed.js',
     background: './src/background-refactored.js',
     popup: './src/popup.js'
   },

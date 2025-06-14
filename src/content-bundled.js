@@ -15,7 +15,7 @@ console.log('🔧 基础功能检测:', {
 });
 
 // 完整文章提取函数 - 和CLI使用相同逻辑
-function extractFullArticle(options = {}) {
+async function extractFullArticle(options = {}) {
   console.log('🚀 开始完整文章提取（CLI同等逻辑）...');
   console.log('提取选项:', options);
   
@@ -137,16 +137,47 @@ function extractFullArticle(options = {}) {
     console.log('✅ 从内容生成摘要:', digest.substring(0, 50) + '...');
   }
   
-  // 提取图片 - 从内容区域
+  // 提取图片 - 从内容区域（支持懒加载）
   let images = [];
   if (contentElement) {
+    // 先尝试触发懒加载
+    await triggerLazyLoadingQuick(contentElement);
+    
     const imgElements = contentElement.querySelectorAll('img');
-    images = Array.from(imgElements).map(img => ({
-      src: img.src,
-      alt: img.alt || '',
-      title: img.title || ''
-    })).filter(img => img.src && !img.src.startsWith('data:'));
-    console.log(`✅ 提取到 ${images.length} 张图片`);
+    images = Array.from(imgElements).map((img, index) => {
+      // 懒加载兼容：优先获取 data-src 等属性
+      let src = img.getAttribute('data-src') || 
+                img.getAttribute('data-original') || 
+                img.getAttribute('data-lazy') ||
+                img.getAttribute('data-url') ||
+                img.src;
+      
+      return {
+        src: src,
+        alt: img.alt || '',
+        title: img.title || '',
+        index: index,
+        isLazyLoaded: img.hasAttribute('data-src') || img.hasAttribute('data-original'),
+        originalSrc: img.src,
+        dataSrc: img.getAttribute('data-src')
+      };
+    }).filter(img => {
+      // 过滤有效图片URL，排除占位符
+      if (!img.src || img.src.startsWith('data:')) return false;
+      
+      const placeholderIndicators = ['placeholder', 'loading', 'blank', '1x1', 'spacer'];
+      const isPlaceholder = placeholderIndicators.some(indicator => 
+        img.src.toLowerCase().includes(indicator)
+      );
+      
+      return !isPlaceholder;
+    });
+    
+    console.log(`✅ 提取到 ${images.length} 张图片（含懒加载支持）`);
+    console.log('图片详情:', images.map(img => ({
+      src: img.src.substring(0, 60) + '...',
+      isLazyLoaded: img.isLazyLoaded
+    })));
   }
   
   // 计算字数
@@ -189,6 +220,110 @@ function generateSlug(title) {
     .replace(/[^\w\s-]/g, '') // 移除特殊字符
     .replace(/[\s_-]+/g, '-') // 替换空格和下划线为连字符
     .replace(/^-+|-+$/g, ''); // 移除开头和结尾的连字符
+}
+
+// 快速懒加载触发函数
+async function triggerLazyLoadingQuick(container) {
+  console.log('🔄 开始触发懒加载...');
+  
+  try {
+    // 方法1：强制加载所有懒加载图片
+    const lazyImages = container.querySelectorAll('img[data-src], img[data-original], img[data-lazy]');
+    console.log(`发现 ${lazyImages.length} 张懒加载图片`);
+    
+    let loadedCount = 0;
+    const loadPromises = [];
+    
+    lazyImages.forEach(img => {
+      const dataSrc = img.getAttribute('data-src') || 
+                     img.getAttribute('data-original') || 
+                     img.getAttribute('data-lazy');
+      
+      if (dataSrc && !isPlaceholderSrc(dataSrc)) {
+        const loadPromise = new Promise((resolve) => {
+          const originalSrc = img.src;
+          
+          img.onload = () => {
+            loadedCount++;
+            console.log(`✅ 懒加载图片加载成功: ${dataSrc.substring(0, 50)}...`);
+            resolve();
+          };
+          
+          img.onerror = () => {
+            console.log(`❌ 懒加载图片加载失败: ${dataSrc.substring(0, 50)}...`);
+            img.src = originalSrc; // 恢复原始src
+            resolve();
+          };
+          
+          // 触发加载
+          img.src = dataSrc;
+          
+          // 清理懒加载属性，避免重复处理
+          img.removeAttribute('data-src');
+          img.removeAttribute('data-original');
+          img.removeAttribute('data-lazy');
+        });
+        
+        loadPromises.push(loadPromise);
+      }
+    });
+    
+    if (loadPromises.length > 0) {
+      await Promise.allSettled(loadPromises);
+      console.log(`🖼️ 强制加载了 ${loadedCount} 张懒加载图片`);
+    }
+    
+    // 方法2：滚动触发（作为备用）
+    await scrollToTriggerLazyLoad();
+    
+    // 等待一段时间让图片加载
+    await sleep(500);
+    
+    console.log('✅ 懒加载触发完成');
+  } catch (error) {
+    console.log(`⚠️ 懒加载触发失败: ${error.message}`);
+  }
+}
+
+// 判断是否是占位符图片
+function isPlaceholderSrc(src) {
+  if (!src) return true;
+  
+  const placeholderIndicators = [
+    'placeholder', 'loading', 'blank', 'transparent', 
+    '1x1', 'spacer', 'pixel.gif', 'default.jpg'
+  ];
+  
+  const srcLower = src.toLowerCase();
+  return placeholderIndicators.some(indicator => srcLower.includes(indicator));
+}
+
+// 滚动页面触发懒加载
+async function scrollToTriggerLazyLoad() {
+  const originalScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+  
+  try {
+    // 滚动到页面底部
+    const scrollHeight = document.body.scrollHeight;
+    const steps = 3; // 减少步数提高速度
+    const stepSize = scrollHeight / steps;
+    
+    for (let i = 0; i <= steps; i++) {
+      const scrollTo = i * stepSize;
+      window.scrollTo(0, scrollTo);
+      await sleep(100); // 等待懒加载触发
+    }
+    
+    console.log('📜 滚动触发懒加载完成');
+  } finally {
+    // 恢复原始滚动位置
+    window.scrollTo(0, originalScrollTop);
+  }
+}
+
+// 睡眠函数
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // 简单的文章提取函数（带详细日志）
@@ -259,20 +394,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'extract' || request.type === 'EXTRACT_ARTICLE' || request.type === 'FULL_EXTRACT') {
     console.log('🎯 处理提取请求:', request.type);
     
-    try {
-      let article;
-      
-      if (request.type === 'FULL_EXTRACT') {
-        // 使用完整提取逻辑（和CLI一致）
-        console.log('🔄 执行完整提取逻辑...');
-        article = extractFullArticle(request.options);
-      } else {
-        // 基础提取逻辑（向后兼容）
-        console.log('🔄 执行基础提取逻辑...');
-        article = extractBasicArticle();
-      }
-      
-      console.log('📤 提取完成，验证数据:', {
+    // 异步处理
+    (async () => {
+      try {
+        let article;
+        
+        if (request.type === 'FULL_EXTRACT') {
+          // 使用完整提取逻辑（和CLI一致）
+          console.log('🔄 执行完整提取逻辑（含懒加载）...');
+          article = await extractFullArticle(request.options);
+        } else {
+          // 基础提取逻辑（向后兼容）
+          console.log('🔄 执行基础提取逻辑...');
+          article = extractBasicArticle();
+        }
+        
+        console.log('📤 提取完成，验证数据:', {
         requestType: request.type,
         hasArticle: !!article,
         articleTitle: article?.title,

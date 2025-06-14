@@ -40,7 +40,7 @@ export class WeChatExtractor {
     }
 
     // 优先使用微信特定选择器
-    const selectorResult = this.extractWithSelectors(document, url);
+    const selectorResult = await this.extractWithSelectors(document, url);
     
     if (this.isContentSufficient(selectorResult)) {
       this.log('✅ 微信选择器提取成功');
@@ -65,7 +65,7 @@ export class WeChatExtractor {
   /**
    * 使用微信特定选择器提取
    */
-  extractWithSelectors(document, url) {
+  async extractWithSelectors(document, url) {
     this.log('🎯 使用微信特定选择器提取');
 
     // 标题提取 - 多个选择器优先级
@@ -149,8 +149,8 @@ export class WeChatExtractor {
       }
     }
 
-    // 图片提取
-    const images = this.extractImages(contentEl || document, url);
+    // 图片提取（异步）
+    const images = await this.extractImages(contentEl || document, url);
 
     return {
       title,
@@ -282,55 +282,244 @@ export class WeChatExtractor {
   }
 
   /**
-   * 图片提取（支持懒加载）
+   * 图片提取（支持懒加载）- 增强版
    */
-  extractImages(container, baseUrl) {
+  async extractImages(container, baseUrl) {
     if (!container) return [];
+
+    // 浏览器环境下先触发懒加载
+    if (this.options.environment === 'browser') {
+      await this.triggerLazyLoading(container);
+    }
 
     const images = [];
     const seenUrls = new Set();
 
-    // 支持多种图片选择器
-    const imgSelectors = [
-      'img[data-src]',     // 懒加载图片
-      'img[src]',          // 直接加载图片  
-      'img[data-original]', // 其他懒加载方式
-      '[style*="background-image"]' // 背景图片
-    ];
-
-    imgSelectors.forEach(selector => {
-      const imgElements = container.querySelectorAll(selector);
+    // 支持多种图片选择器和懒加载属性
+    const imgElements = container.querySelectorAll('img');
+    
+    imgElements.forEach((img, index) => {
+      let src = this.getImageSrc(img);
       
-      imgElements.forEach((img, index) => {
-        let src = img.getAttribute('data-src') || 
-                  img.getAttribute('src') || 
-                  img.getAttribute('data-original');
+      if (src && isValidImageUrl(src) && !seenUrls.has(src)) {
+        seenUrls.add(src);
+        
+        images.push({
+          src: src,
+          alt: img.alt || '',
+          index: images.length,
+          width: img.naturalWidth || img.width || 0,
+          height: img.naturalHeight || img.height || 0,
+          isLazyLoaded: this.isLazyLoadedImage(img),
+          originalSrc: img.src,
+          dataSrc: img.getAttribute('data-src')
+        });
+      }
+    });
 
-        // 处理背景图片
-        if (!src && selector.includes('background-image')) {
-          const style = img.style.backgroundImage || img.getAttribute('style') || '';
-          const match = style.match(/url\(['"]?([^'"()]+)['"]?\)/);
-          if (match) src = match[1];
-        }
-
-        if (src && isValidImageUrl(src) && !seenUrls.has(src)) {
-          // 微信图片特殊处理
-          if (src.includes('mmbiz.qpic.cn')) {
-            seenUrls.add(src);
-            images.push({
-              src: src,
-              alt: img.alt || '',
-              index: images.length,
-              width: img.width || 0,
-              height: img.height || 0
-            });
-          }
-        }
-      });
+    // 额外处理背景图片
+    const bgImages = this.extractBackgroundImages(container);
+    bgImages.forEach(bgImg => {
+      if (!seenUrls.has(bgImg.src)) {
+        seenUrls.add(bgImg.src);
+        images.push(bgImg);
+      }
     });
 
     this.log(`📷 提取到 ${images.length} 张图片`);
     return images;
+  }
+
+  /**
+   * 获取图片真实源地址（懒加载兼容）
+   */
+  getImageSrc(img) {
+    // 优先级：data-src > data-original > data-lazy > src
+    const lazySrcAttrs = [
+      'data-src',
+      'data-original', 
+      'data-lazy',
+      'data-url',
+      'data-img-src'
+    ];
+
+    // 首先检查懒加载属性
+    for (const attr of lazySrcAttrs) {
+      const lazySrc = img.getAttribute(attr);
+      if (lazySrc && !lazySrc.startsWith('data:') && !this.isPlaceholderSrc(lazySrc)) {
+        return lazySrc;
+      }
+    }
+
+    // 如果没有懒加载属性，或懒加载属性是占位符，则使用src
+    const src = img.src || img.getAttribute('src');
+    if (src && !src.startsWith('data:') && !this.isPlaceholderSrc(src)) {
+      return src;
+    }
+
+    return null;
+  }
+
+  /**
+   * 判断是否是占位符图片
+   */
+  isPlaceholderSrc(src) {
+    if (!src) return true;
+    
+    const placeholderIndicators = [
+      'placeholder',
+      'loading',
+      'blank',
+      'transparent',
+      '1x1',
+      'spacer',
+      'pixel.gif',
+      'default.jpg'
+    ];
+    
+    const srcLower = src.toLowerCase();
+    return placeholderIndicators.some(indicator => srcLower.includes(indicator));
+  }
+
+  /**
+   * 检查图片是否使用了懒加载
+   */
+  isLazyLoadedImage(img) {
+    // 检查懒加载属性
+    const lazyAttrs = ['data-src', 'data-original', 'data-lazy', 'loading'];
+    const hasLazyAttr = lazyAttrs.some(attr => img.hasAttribute(attr));
+    
+    // 检查懒加载类名
+    const lazyClasses = ['lazy', 'lazyload', 'lazy-load', 'img-lazy'];
+    const hasLazyClass = lazyClasses.some(cls => img.classList.contains(cls));
+    
+    return hasLazyAttr || hasLazyClass;
+  }
+
+  /**
+   * 浏览器环境下触发懒加载
+   */
+  async triggerLazyLoading(container) {
+    if (this.options.environment !== 'browser') return;
+    
+    this.log('🔄 触发懒加载机制...');
+    
+    try {
+      // 方法1：强制加载所有懒加载图片
+      await this.forceLoadLazyImages(container);
+      
+      // 方法2：滚动触发（作为备用）
+      await this.scrollToTriggerLazyLoad();
+      
+      // 等待一段时间让图片加载
+      await this.sleep(1000);
+      
+      this.log('✅ 懒加载触发完成');
+    } catch (error) {
+      this.log(`⚠️ 懒加载触发失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 强制加载懒加载图片
+   */
+  async forceLoadLazyImages(container) {
+    const lazyImages = container.querySelectorAll('img[data-src], img[data-original], img[data-lazy]');
+    
+    let loadedCount = 0;
+    const loadPromises = [];
+    
+    lazyImages.forEach(img => {
+      const dataSrc = img.getAttribute('data-src') || 
+                     img.getAttribute('data-original') || 
+                     img.getAttribute('data-lazy');
+      
+      if (dataSrc && !this.isPlaceholderSrc(dataSrc)) {
+        const loadPromise = new Promise((resolve) => {
+          const originalSrc = img.src;
+          
+          img.onload = () => {
+            loadedCount++;
+            resolve();
+          };
+          
+          img.onerror = () => {
+            // 加载失败时恢复原始src
+            img.src = originalSrc;
+            resolve();
+          };
+          
+          // 触发加载
+          img.src = dataSrc;
+          img.removeAttribute('data-src');
+          img.removeAttribute('data-original');
+          img.removeAttribute('data-lazy');
+        });
+        
+        loadPromises.push(loadPromise);
+      }
+    });
+    
+    if (loadPromises.length > 0) {
+      await Promise.allSettled(loadPromises);
+      this.log(`🖼️ 强制加载了 ${loadedCount} 张懒加载图片`);
+    }
+  }
+
+  /**
+   * 滚动页面触发懒加载
+   */
+  async scrollToTriggerLazyLoad() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    
+    const originalScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    
+    // 滚动到页面底部
+    const scrollHeight = document.body.scrollHeight;
+    const steps = 5;
+    const stepSize = scrollHeight / steps;
+    
+    for (let i = 0; i <= steps; i++) {
+      const scrollTo = i * stepSize;
+      window.scrollTo(0, scrollTo);
+      await this.sleep(200); // 等待懒加载触发
+    }
+    
+    // 恢复原始滚动位置
+    window.scrollTo(0, originalScrollTop);
+  }
+
+  /**
+   * 提取背景图片
+   */
+  extractBackgroundImages(container) {
+    const bgImages = [];
+    const elementsWithBg = container.querySelectorAll('[style*="background-image"]');
+    
+    elementsWithBg.forEach((el, index) => {
+      const style = el.style.backgroundImage || el.getAttribute('style') || '';
+      const match = style.match(/url\(['"]?([^'"()]+)['"]?\)/);
+      
+      if (match && match[1] && isValidImageUrl(match[1])) {
+        bgImages.push({
+          src: match[1],
+          alt: el.getAttribute('alt') || '',
+          index: index,
+          width: 0,
+          height: 0,
+          isBackgroundImage: true
+        });
+      }
+    });
+    
+    return bgImages;
+  }
+
+  /**
+   * 睡眠函数
+   */
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**

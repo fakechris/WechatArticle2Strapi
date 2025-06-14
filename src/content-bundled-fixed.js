@@ -1,5 +1,3 @@
-/******/ (() => { // webpackBootstrap
-/******/ 	"use strict";
 /**
  * Chrome Extension Content Script - 懒加载图片修复版
  * 解决微信公众号文章懒加载图片无法提取的问题
@@ -580,5 +578,3 @@ window.wechatExtractor = {
 };
 
 console.log('🎉 Content script设置完成（懒加载修复版）'); 
-/******/ })()
-;
