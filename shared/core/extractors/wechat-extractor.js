@@ -762,15 +762,77 @@ export class WeChatExtractor {
    * 检测页面是否需要验证
    */
   detectVerificationPage(document) {
+    // 更智能的验证页面检测逻辑
+    // 不仅检查元素存在，还要检查关键文本内容
+    
+    const verificationKeywords = [
+      '环境异常',
+      '完成验证后即可继续访问',
+      '请完成验证',
+      '安全验证',
+      '网络环境异常',
+      '请在微信客户端打开',
+      '访问过于频繁'
+    ];
+    
+    // 1. 首先检查页面文本是否包含验证相关关键词
+    const bodyText = document.body ? document.body.textContent || '' : '';
+    const hasVerificationText = verificationKeywords.some(keyword => 
+      bodyText.includes(keyword)
+    );
+    
+    // 2. 检查是否有文章内容容器
+    const contentSelectors = [
+      '#js_content',
+      '.rich_media_content', 
+      '[id*="content"]',
+      '.article-content'
+    ];
+    
+    const hasContentContainer = contentSelectors.some(selector => {
+      const element = document.querySelector(selector);
+      return element && element.textContent && element.textContent.trim().length > 100;
+    });
+    
+    // 3. 检查页面标题是否正常
+    const title = document.title || '';
+    const hasNormalTitle = title && !title.includes('验证') && !title.includes('异常');
+    
+    // 判断逻辑：
+    // - 如果有验证文本且没有正常内容，认为是验证页面
+    // - 如果有正常的文章内容和标题，即使有weui-msg也不认为是验证页面
+    if (hasVerificationText && !hasContentContainer) {
+      this.log('检测到验证页面：包含验证关键词且缺少文章内容');
+      return true;
+    }
+    
+    if (hasContentContainer && hasNormalTitle) {
+      this.log('检测到正常文章页面：有内容容器和正常标题');
+      return false;
+    }
+    
+    // 回退到原有逻辑，但更谨慎
     const verificationIndicators = [
       '.weui-msg',
       '[class*="verification"]',
       '[class*="verify"]'
     ];
-
-    return verificationIndicators.some(selector => 
-      document.querySelector(selector)
-    );
+    
+    const hasVerificationElements = verificationIndicators.some(selector => {
+      const element = document.querySelector(selector);
+      if (!element) return false;
+      
+      // 检查元素内容是否真的是验证相关
+      const elementText = element.textContent || '';
+      return verificationKeywords.some(keyword => elementText.includes(keyword));
+    });
+    
+    if (hasVerificationElements) {
+      this.log('检测到验证页面：验证元素包含关键词');
+      return true;
+    }
+    
+    return false;
   }
 
   /**
