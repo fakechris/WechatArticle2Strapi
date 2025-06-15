@@ -29,6 +29,7 @@ All notable changes to Enhanced Article Extractor will be documented in this fil
 - **CLI工具增强**: CLI工具现在完全支持Playwright自动化
 - **共享逻辑扩展**: 在shared模块中添加Playwright相关的通用功能
 - **配置扩展**: 支持Playwright相关的配置选项
+- **版本同步**: 更新manifest.json版本号与package.json保持一致
 
 #### 🎯 使用场景
 - **SPA应用**: 支持React、Vue等单页应用的内容提取

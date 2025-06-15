@@ -13,18 +13,21 @@
 #### 必须更新的文件
 1. **package.json** - 主项目版本号
 2. **cli/package.json** - CLI工具版本号  
-3. **CHANGELOG.md** - 详细变更记录
-4. **README.md** - 项目概述和使用说明
-5. **docs/README.md** - 文档索引更新
+3. **manifest.json** - Chrome扩展版本号
+4. **CHANGELOG.md** - 详细变更记录
+5. **README.md** - 项目概述和使用说明
+6. **docs/README.md** - 文档索引更新
 
 #### 更新检查清单
 ```markdown
 - [ ] 更新根目录 package.json 版本号
 - [ ] 更新 cli/package.json 版本号（如涉及CLI变更）
+- [ ] 更新 manifest.json 版本号（Chrome扩展）
 - [ ] 在 CHANGELOG.md 中添加新版本条目
 - [ ] 更新 README.md 中的版本相关信息
 - [ ] 更新 docs/README.md 中的新功能文档链接
 - [ ] 确认所有新功能都有对应的文档
+- [ ] 运行 npm run build 重新构建
 - [ ] 运行完整测试（如有）
 - [ ] 创建 Git tag: `git tag v1.x.x`
 ```

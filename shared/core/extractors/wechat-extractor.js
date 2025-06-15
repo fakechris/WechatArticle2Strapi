@@ -58,7 +58,7 @@ export class WeChatExtractor {
 
     // 最后回退到基础提取
     this.log('⚠️ 使用基础提取作为最后手段');
-    const basicResult = this.extractBasic(document, url);
+    const basicResult = await this.extractBasic(document, url);
     return this.normalizeResult(basicResult, 'wechat-basic');
   }
 
@@ -203,8 +203,8 @@ export class WeChatExtractor {
       }
     }
 
-    // 图片提取（异步）
-    const images = await this.extractImages(contentEl || document, url, selectors.imageContainers);
+    // 图片提取（异步） - 🆕 传入 document 参数以支持 og:image 提取
+    const images = await this.extractImages(contentEl || document, url, selectors.imageContainers, document);
 
     return {
       title,
@@ -270,13 +270,13 @@ export class WeChatExtractor {
     }
 
     // 增强Defuddle结果
-    return this.enhanceWithWeChatMetadata(result, document, url);
+    return await this.enhanceWithWeChatMetadata(result, document, url);
   }
 
   /**
    * 基础提取（最后手段）
    */
-  extractBasic(document, url) {
+  async extractBasic(document, url) {
     this.log('🔧 使用基础提取方法');
 
     // 尝试找到最大的文本块
@@ -294,7 +294,7 @@ export class WeChatExtractor {
 
     const title = document.title || '';
     const content = contentEl ? contentEl.innerHTML : '';
-    const images = this.extractImages(contentEl || document, url);
+    const images = await this.extractImages(contentEl || document, url, null, document);
 
     // 简单的siteName提取
     let siteName = '';
@@ -321,7 +321,7 @@ export class WeChatExtractor {
   /**
    * 增强Defuddle结果with微信特定元数据
    */
-  enhanceWithWeChatMetadata(defuddleResult, document, url) {
+  async enhanceWithWeChatMetadata(defuddleResult, document, url) {
     const authorEl = this.querySelector(document, WECHAT_SELECTORS.author);
     const publishTimeEl = this.querySelector(document, WECHAT_SELECTORS.publishTime);
     const digestEl = this.querySelector(document, WECHAT_SELECTORS.digest);
@@ -339,8 +339,8 @@ export class WeChatExtractor {
       }
     }
 
-    // 从清理后的内容中提取图片
-    const images = this.extractImagesFromHTML(defuddleResult.content, url);
+    // 从清理后的内容中提取图片 - 🆕 传入 document 参数以支持 og:image 提取
+    const images = await this.extractImagesFromHTML(defuddleResult.content, url, document);
 
     return {
       title: defuddleResult.title || '',
@@ -363,8 +363,38 @@ export class WeChatExtractor {
   /**
    * 图片提取（支持懒加载）- 增强版
    */
-  async extractImages(container, baseUrl, imageContainerSelectors = null) {
+  async extractImages(container, baseUrl, imageContainerSelectors = null, document = null) {
     if (!container) return [];
+    
+    const images = [];
+    const seenUrls = new Set();
+
+    // 🆕 首先检查 og:image，如果存在，优先处理并设置为头图
+    if (document) {
+      const ogImage = document.querySelector('meta[property="og:image"]');
+      if (ogImage) {
+        const ogImageUrl = ogImage.getAttribute('content');
+        if (ogImageUrl && isValidImageUrl(ogImageUrl) && !seenUrls.has(ogImageUrl)) {
+          seenUrls.add(ogImageUrl);
+          
+          // 将 og:image 作为第一张图片，并标记为头图
+          images.push({
+            src: this.normalizeImageUrl(ogImageUrl),
+            alt: 'Head image from og:image',
+            index: 0,
+            width: 0,
+            height: 0,
+            isLazyLoaded: false,
+            originalSrc: ogImageUrl,
+            dataSrc: null,
+            isHeadImage: true, // 🆕 标记为头图
+            source: 'og:image' // 🆕 标记来源
+          });
+          
+          this.log(`📸 发现并添加 og:image 作为头图: ${ogImageUrl.substring(0, 60)}...`);
+        }
+      }
+    }
     
     // 如果提供了特定的图片容器选择器，优先使用
     let imageContainer = container;
@@ -384,9 +414,6 @@ export class WeChatExtractor {
       await this.triggerLazyLoading(imageContainer);
     }
 
-    const images = [];
-    const seenUrls = new Set();
-
     // 支持多种图片选择器和懒加载属性
     const imgElements = imageContainer.querySelectorAll('img');
     
@@ -404,7 +431,9 @@ export class WeChatExtractor {
           height: img.naturalHeight || img.height || 0,
           isLazyLoaded: this.isLazyLoadedImage(img),
           originalSrc: img.src,
-          dataSrc: img.getAttribute('data-src')
+          dataSrc: img.getAttribute('data-src'),
+          isHeadImage: false, // 🆕 默认非头图
+          source: 'content' // 🆕 标记来源
         });
       }
     });
@@ -414,11 +443,15 @@ export class WeChatExtractor {
     bgImages.forEach(bgImg => {
       if (!seenUrls.has(bgImg.src)) {
         seenUrls.add(bgImg.src);
-        images.push(bgImg);
+        images.push({
+          ...bgImg,
+          isHeadImage: false, // 🆕 默认非头图
+          source: 'background' // 🆕 标记来源
+        });
       }
     });
 
-    this.log(`📷 提取到 ${images.length} 张图片`);
+    this.log(`📷 提取到 ${images.length} 张图片 (包含 og:image: ${images.some(img => img.source === 'og:image')})`);
     return images;
   }
 
@@ -722,7 +755,7 @@ export class WeChatExtractor {
   /**
    * 从HTML字符串中提取图片
    */
-  extractImagesFromHTML(htmlContent, baseUrl) {
+  async extractImagesFromHTML(htmlContent, baseUrl, document = null) {
     if (!htmlContent) return [];
 
     // 创建临时DOM容器 - 安全地处理不同环境
@@ -736,7 +769,7 @@ export class WeChatExtractor {
       tempDiv = this.createTempElement(htmlContent);
     }
 
-    return this.extractImages(tempDiv, baseUrl);
+    return await this.extractImages(tempDiv, baseUrl, null, document);
   }
 
   /**
@@ -762,15 +795,77 @@ export class WeChatExtractor {
    * 检测页面是否需要验证
    */
   detectVerificationPage(document) {
+    // 更智能的验证页面检测逻辑
+    // 不仅检查元素存在，还要检查关键文本内容
+    
+    const verificationKeywords = [
+      '环境异常',
+      '完成验证后即可继续访问',
+      '请完成验证',
+      '安全验证',
+      '网络环境异常',
+      '请在微信客户端打开',
+      '访问过于频繁'
+    ];
+    
+    // 1. 首先检查页面文本是否包含验证相关关键词
+    const bodyText = document.body ? document.body.textContent || '' : '';
+    const hasVerificationText = verificationKeywords.some(keyword => 
+      bodyText.includes(keyword)
+    );
+    
+    // 2. 检查是否有文章内容容器
+    const contentSelectors = [
+      '#js_content',
+      '.rich_media_content', 
+      '[id*="content"]',
+      '.article-content'
+    ];
+    
+    const hasContentContainer = contentSelectors.some(selector => {
+      const element = document.querySelector(selector);
+      return element && element.textContent && element.textContent.trim().length > 100;
+    });
+    
+    // 3. 检查页面标题是否正常
+    const title = document.title || '';
+    const hasNormalTitle = title && !title.includes('验证') && !title.includes('异常');
+    
+    // 判断逻辑：
+    // - 如果有验证文本且没有正常内容，认为是验证页面
+    // - 如果有正常的文章内容和标题，即使有weui-msg也不认为是验证页面
+    if (hasVerificationText && !hasContentContainer) {
+      this.log('检测到验证页面：包含验证关键词且缺少文章内容');
+      return true;
+    }
+    
+    if (hasContentContainer && hasNormalTitle) {
+      this.log('检测到正常文章页面：有内容容器和正常标题');
+      return false;
+    }
+    
+    // 回退到原有逻辑，但更谨慎
     const verificationIndicators = [
       '.weui-msg',
       '[class*="verification"]',
       '[class*="verify"]'
     ];
-
-    return verificationIndicators.some(selector => 
-      document.querySelector(selector)
-    );
+    
+    const hasVerificationElements = verificationIndicators.some(selector => {
+      const element = document.querySelector(selector);
+      if (!element) return false;
+      
+      // 检查元素内容是否真的是验证相关
+      const elementText = element.textContent || '';
+      return verificationKeywords.some(keyword => elementText.includes(keyword));
+    });
+    
+    if (hasVerificationElements) {
+      this.log('检测到验证页面：验证元素包含关键词');
+      return true;
+    }
+    
+    return false;
   }
 
   /**
@@ -797,8 +892,27 @@ export class WeChatExtractor {
    * 标准化输出结果
    */
   normalizeResult(result, method) {
+    // 🆕 处理头图逻辑
+    let head_img = null;
+    if (result.images && result.images.length > 0) {
+      // 查找标记为头图的图片（通常是og:image）
+      const headImage = result.images.find(img => img.isHeadImage);
+      if (headImage) {
+        head_img = headImage.src;
+        this.log(`✅ 设置头图: ${head_img.substring(0, 60)}... (来源: ${headImage.source})`);
+      } else {
+        // 如果没有明确的头图，使用第一张有效图片作为头图
+        const firstValidImage = result.images.find(img => img.src && img.src.length > 0);
+        if (firstValidImage) {
+          head_img = firstValidImage.src;
+          this.log(`📸 使用第一张图片作为头图: ${head_img.substring(0, 60)}...`);
+        }
+      }
+    }
+
     return {
       ...result,
+      head_img, // 🆕 添加头图字段
       extractionMethod: method,
       extractedAt: new Date().toISOString(),
       environment: this.options.environment
