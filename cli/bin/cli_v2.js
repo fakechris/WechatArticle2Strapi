@@ -183,30 +183,57 @@ program
       }
 
       // 调试模式下，即使没有 --strapi 也生成准备发送给 Strapi 的数据
-      if ((options.debug || options.output === 'json') && !options.strapi && config) {
+      if (options.debug) {
+        console.log(chalk.gray(`🔍 调试检查: debug=${options.debug}, output=${options.output}, strapi=${options.strapi}, config=${!!config}`));
+      }
+      
+      if ((options.debug || options.output === 'json') && !options.strapi) {
         try {
-          // 创建 Strapi 集成实例用于数据处理（不实际发送）
-          const { StrapiIntegration } = await import('../../shared/core/integrations/strapi-integration.js');
-          const debugStrapiIntegration = new StrapiIntegration(config, {
-            environment: 'browser',
-            verbose: options.verbose,
-            debug: options.debug
-          });
+          if (config) {
+            // 有配置文件，使用真实配置生成数据
+            const { StrapiIntegration } = await import('../../shared/core/integrations/strapi-integration.js');
+            const debugStrapiIntegration = new StrapiIntegration(config, {
+              environment: 'browser',
+              verbose: options.verbose,
+              debug: options.debug
+            });
 
-          // 生成准备发送的数据结构
-          const strapiPayload = debugStrapiIntegration.buildStrapiData(result.article, [], null);
-          result.strapi = {
-            debugMode: true,
-            payload: strapiPayload,
-            collection: config.collection,
-            endpoint: `${config.strapiUrl}/api/${config.collection}`
-          };
+            const strapiPayload = debugStrapiIntegration.buildStrapiData(result.article, [], null);
+            result.strapi = {
+              debugMode: true,
+              configFound: true,
+              payload: strapiPayload,
+              collection: config.collection,
+              endpoint: `${config.strapiUrl}/api/${config.collection}`
+            };
+          } else {
+            // 没有配置文件，生成基本的数据结构示例
+            result.strapi = {
+              debugMode: true,
+              configFound: false,
+              note: "No config file found. This shows the basic data structure that would be sent to Strapi.",
+              payload: {
+                title: result.article.title || '',
+                content: result.article.content || '',
+                summary: result.article.digest || '',
+                slug: result.article.slug || '',
+                news_from_web: result.article.siteName || 'WeChat',
+                // 基本字段映射示例
+                url: result.article.url,
+                author: result.article.author || '',
+                publishTime: result.article.publishTime || '',
+                images: result.article.images?.images?.length || 0
+              },
+              collection: "your-collection-name",
+              endpoint: "https://your-strapi.com/api/your-collection-name"
+            };
+          }
           
           if (options.verbose) {
             console.log(chalk.gray('🔍 调试模式: 已生成 Strapi 数据结构（未实际发送）'));
           }
         } catch (debugError) {
-          if (options.verbose) {
+          if (options.verbose || options.debug) {
             console.log(chalk.yellow(`⚠️ Strapi 数据生成失败: ${debugError.message}`));
           }
         }
