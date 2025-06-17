@@ -204,16 +204,17 @@ export class WeChatExtractor {
     }
 
     // 图片提取（异步） - 🆕 传入 document 参数以支持 og:image 提取
-    const images = await this.extractImages(contentEl || document, url, selectors.imageContainers, document);
+    // 图片提取，并获取渲染后的HTML
+    const { images: extractedImagesArray, renderedHTML: updatedHtmlContent } = await this.extractImages(contentEl || document, url, selectors.imageContainers, document);
 
     return {
       title,
       author,
       publishTime,
-      content,
+      content: updatedHtmlContent, // 使用渲染后的HTML作为内容
       digest,
       siteName,  // 新增字段
-      images,
+      images: extractedImagesArray, // 使用提取到的图片数组
       url,
       slug: title ? generateSlug(title) : '',
       timestamp: Date.now()
@@ -340,13 +341,15 @@ export class WeChatExtractor {
     }
 
     // 从清理后的内容中提取图片 - 🆕 传入 document 参数以支持 og:image 提取
-    const images = await this.extractImagesFromHTML(defuddleResult.content, url, document);
+    const imageExtractionResult = await this.extractImagesFromHTML(defuddleResult.content, url, document);
+    const images = imageExtractionResult.images;
+    const updatedContent = imageExtractionResult.updatedHtmlContent;
 
     return {
       title: defuddleResult.title || '',
       author: defuddleResult.author || (authorEl ? authorEl.textContent?.trim() : ''),
       publishTime: defuddleResult.published || (publishTimeEl ? publishTimeEl.textContent?.trim() : ''),
-      content: defuddleResult.content || '',
+      content: updatedContent,
       digest: defuddleResult.description || (digestEl ? (digestEl.content || digestEl.textContent || '').trim() : ''),
       siteName,  // 新增字段
       images: images,
@@ -452,7 +455,7 @@ export class WeChatExtractor {
     });
 
     this.log(`📷 提取到 ${images.length} 张图片 (包含 og:image: ${images.some(img => img.source === 'og:image')})`);
-    return images;
+    return { images: images, renderedHTML: container.innerHTML };
   }
 
   /**
@@ -756,7 +759,7 @@ export class WeChatExtractor {
    * 从HTML字符串中提取图片
    */
   async extractImagesFromHTML(htmlContent, baseUrl, document = null) {
-    if (!htmlContent) return [];
+    if (!htmlContent) return { images: [], updatedHtmlContent: htmlContent };
 
     // 创建临时DOM容器 - 安全地处理不同环境
     let tempDiv;
@@ -766,10 +769,27 @@ export class WeChatExtractor {
       tempDiv.innerHTML = htmlContent;
     } else {
       // CLI/Node.js环境，使用简化实现
+      // Ensure createTempElement returns a valid container, or handle its absence
       tempDiv = this.createTempElement(htmlContent);
+      if (!tempDiv || typeof tempDiv.innerHTML === 'undefined') {
+        // If tempDiv is not valid (e.g., htmlContent was empty or createTempElement failed),
+        // return original content with no images.
+        this.log('Warning: Could not create tempDiv for HTML content in extractImagesFromHTML.', 'warn', 'extractImagesFromHTML');
+        return { images: [], updatedHtmlContent: htmlContent };
+      }
     }
 
-    return await this.extractImages(tempDiv, baseUrl, null, document);
+    const extractionResult = await this.extractImages(tempDiv, baseUrl, null, document);
+    // Ensure extractionResult and its properties are valid before accessing
+    const images = extractionResult && extractionResult.images ? extractionResult.images : [];
+    // If container.innerHTML was null or undefined (e.g. if container was not a valid element or extractImages failed to return it),
+    // fall back to original htmlContent.
+    const renderedHTML = extractionResult && typeof extractionResult.renderedHTML === 'string' ? extractionResult.renderedHTML : htmlContent;
+
+    return {
+        images: images,
+        updatedHtmlContent: renderedHTML
+    };
   }
 
   /**

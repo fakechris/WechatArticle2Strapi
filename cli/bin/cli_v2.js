@@ -7,7 +7,9 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import fsAsync from 'fs/promises';
 import { readFileSync } from 'fs';
+import path from 'path';
 import validator from 'validator';
 import { PlaywrightAdapter } from '../src/adapters/playwright-adapter.js';
 import { isWeChatArticleUrl } from '../../shared/utils/url-utils.js';
@@ -182,7 +184,20 @@ program
 
       // 输出结果
       if (options.output === 'json') {
-        console.log(JSON.stringify(result, null, 2));
+        const jsonOutput = JSON.stringify(result, null, 2);
+        console.log(jsonOutput);
+
+        // Save JSON to file
+        const outputDir = path.join(process.cwd(), 'output');
+        const outputFilePath = path.join(outputDir, 'article_output.json');
+        try {
+          await fsAsync.mkdir(outputDir, { recursive: true });
+          await fsAsync.writeFile(outputFilePath, jsonOutput);
+          console.log(chalk.green(`📄 JSON output saved to ${outputFilePath}`));
+        } catch (error) {
+          console.error(chalk.red(`❌ Error saving JSON to file: ${error.message}`));
+          // Optionally set process.exitCode = 1 here if saving is critical
+        }
       } else {
         adapter.printExtractionReport(result);
         

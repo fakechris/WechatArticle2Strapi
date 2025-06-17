@@ -51,3 +51,4 @@ demo-*.js
 # Temp directory contents (but keep structure)
 temp/*
 !temp/.gitkeep
+output/
