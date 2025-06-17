@@ -955,14 +955,40 @@ export class WeChatExtractor {
       }
     }
     
-    // Node.js环境下的简化实现
-    // 实际项目中可以集成JSDOM
+    // Node.js环境下使用JSDOM实现（如果可用）
+    if (typeof global !== 'undefined' && global.document) {
+      const div = global.document.createElement('div');
+      div.innerHTML = htmlContent;
+      return div;
+    }
+    
+    // 如果没有JSDOM，使用字符串操作清理script标签
+    let cleanedContent = htmlContent;
+    
+    // 移除所有script标签及其内容
+    cleanedContent = cleanedContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    
+    // 移除其他噪音元素
+    const removeSelectors = [
+      /<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi,
+      /<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi,
+      /<input[^>]*type="hidden"[^>]*>/gi,
+      /<meta\b[^>]*>/gi,
+      /<link\b[^>]*>/gi,
+      /<template\b[^<]*(?:(?!<\/template>)<[^<]*)*<\/template>/gi
+    ];
+    
+    removeSelectors.forEach(regex => {
+      cleanedContent = cleanedContent.replace(regex, '');
+    });
+    
+    // 返回简化的对象，但innerHTML已经被清理
     return {
-      innerHTML: htmlContent,
-      querySelectorAll: () => [], // 简化实现
+      innerHTML: cleanedContent,
+      querySelectorAll: () => [], // 清理已经在字符串级别完成
       querySelector: () => null,
       remove: () => {},
-      textContent: htmlContent.replace(/<[^>]*>/g, ''), // 简单的HTML标签移除
+      textContent: cleanedContent.replace(/<[^>]*>/g, ''),
       childNodes: [],
       children: []
     };
