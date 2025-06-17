@@ -43,7 +43,6 @@ export const WECHAT_SELECTORS = {
 
   // 摘要/描述选择器
   digest: [
-    '.rich_media_meta_text',
     'meta[name="description"]',
     'meta[property="og:description"]',
     '.weui-article__desc'

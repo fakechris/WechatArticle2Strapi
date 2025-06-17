@@ -139,44 +139,8 @@ export class WeChatExtractor {
       }
     }
     
-    // 3. 最后的回退：从内容中提取摘要（过滤掉脚本内容）
-    if (!digest && content) {
-      // 创建临时元素来解析HTML并移除脚本
-      const tempDiv = this.createTempElement(content);
-      
-      // 移除所有脚本、样式和噪音元素
-      const scriptsAndStyles = tempDiv.querySelectorAll('script, style, noscript, input, meta, link');
-      scriptsAndStyles.forEach(el => el.remove());
-      
-      // 获取纯文本内容
-      const textContent = tempDiv.textContent || tempDiv.innerText || '';
-      const cleanText = textContent.replace(/\s+/g, ' ').trim();
-      
-      // 过滤掉明显的脚本内容和找到实际的文章段落
-      if (cleanText && !this.isScriptContent(cleanText)) {
-        // 尝试找到第一个有意义的段落作为摘要
-        const sentences = cleanText.split(/[。！？.!?]/).filter(s => s.trim().length > 10);
-        if (sentences.length > 0) {
-          let summary = sentences[0].trim();
-          if (summary.length > 150) {
-            summary = summary.substring(0, 150) + '...';
-          } else if (sentences.length > 1 && summary.length < 100) {
-            // 如果第一句话太短，尝试加上第二句
-            const secondSentence = sentences[1].trim();
-            if (summary.length + secondSentence.length < 150) {
-              summary += '。' + secondSentence;
-            }
-          }
-          digest = summary;
-        } else {
-          // 后备方案：使用前150个字符
-          digest = cleanText.substring(0, 150);
-          if (cleanText.length > 150) {
-            digest += '...';
-          }
-        }
-      }
-    }
+    // 3. 如果仍然没有摘要，保持为空（不从内容中强制提取）
+    // 这避免了从整个页面内容中错误提取摘要的问题
 
     // siteName提取 - 新增逻辑
     let siteName = '';
