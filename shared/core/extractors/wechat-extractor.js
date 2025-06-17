@@ -39,6 +39,12 @@ export class WeChatExtractor {
       throw new Error('微信页面需要环境验证，请在浏览器中完成验证后重试');
     }
 
+    // 关键修复：在任何提取操作之前，先对整个文档进行清理
+    this.log('🔬 Pre-cleaning the entire document before extraction...');
+    this.removeTemplateCodeNodes(document.body); // 移除模板脚本
+    this.removeJunkElements(document.body);      // 移除广告、页脚等垃圾内容
+    this.log('✅ Document pre-cleaning complete.');
+
     // 优先使用微信特定选择器
     const selectorResult = await this.extractWithSelectors(document, url);
     
@@ -751,8 +757,8 @@ export class WeChatExtractor {
     const renderedHTML = extractionResult && typeof extractionResult.renderedHTML === 'string' ? extractionResult.renderedHTML : htmlContent;
 
     return {
-        images: images,
-        updatedHtmlContent: renderedHTML
+      images: images,
+      updatedHtmlContent: renderedHTML
     };
   }
 
@@ -942,203 +948,193 @@ export class WeChatExtractor {
   }
 
   /**
-   * 环境适配的临时元素创建
+   * Creates a temporary DOM element from an HTML string to allow for DOM manipulation.
+   * This is crucial for cleaning up the extracted content.
    */
   createTempElement(htmlContent, documentObj = null) {
-    // 首先尝试使用传入的document对象（通常来自JSDOM）
-    if (documentObj && documentObj.createElement) {
-      const div = documentObj.createElement('div');
-      div.innerHTML = htmlContent;
-      return div;
-    }
-    
-    if (this.options.environment === 'browser') {
-      // 浏览器环境 - 使用全局document
-      const doc = (typeof document !== 'undefined' ? document : null);
-      if (doc) {
-        const div = doc.createElement('div');
-        div.innerHTML = htmlContent;
-        return div;
+    // In a Node.js environment, we must use JSDOM to create a full DOM.
+    if (this.options.environment === 'node' || !documentObj) {
+      try {
+        const { JSDOM } = require('jsdom');
+        const dom = new JSDOM(`<!DOCTYPE html><body>${htmlContent}</body>`);
+        // We return the body element, which contains our parsed HTML.
+        return dom.window.document.body;
+      } catch (e) {
+        this.log('Error requiring or using JSDOM. Please ensure it is installed (`npm install jsdom`).', e, 'error');
+        // As a fallback, return a mock object to prevent crashes, though cleanup will be skipped.
+        return { innerHTML: htmlContent, querySelectorAll: () => [], querySelector: () => null };
       }
     }
-    
-    // Node.js环境下使用JSDOM实现（如果可用）
-    if (typeof global !== 'undefined' && global.document) {
-      const div = global.document.createElement('div');
-      div.innerHTML = htmlContent;
-      return div;
-    }
-    
-    // 如果没有JSDOM，使用字符串操作清理script标签
-    let cleanedContent = htmlContent;
-    
-    // 移除所有script标签及其内容
-    cleanedContent = cleanedContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-    
-    // 移除其他噪音元素
-    const removeSelectors = [
-      /<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi,
-      /<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi,
-      /<input[^>]*type="hidden"[^>]*>/gi,
-      /<meta\b[^>]*>/gi,
-      /<link\b[^>]*>/gi,
-      /<template\b[^<]*(?:(?!<\/template>)<[^<]*)*<\/template>/gi
-    ];
-    
-    removeSelectors.forEach(regex => {
-      cleanedContent = cleanedContent.replace(regex, '');
-    });
-    
-    // 返回简化的对象，但innerHTML已经被清理
-    return {
-      innerHTML: cleanedContent,
-      querySelectorAll: () => [], // 清理已经在字符串级别完成
-      querySelector: () => null,
-      remove: () => {},
-      textContent: cleanedContent.replace(/<[^>]*>/g, ''),
-      childNodes: [],
-      children: []
-    };
+
+    // In a browser environment, use the provided document object.
+    const tempDiv = documentObj.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    return tempDiv;
   }
 
   /**
    * 调试日志
    */
-  log(message) {
+  log(message, data = null, level = 'info') {
     if (this.options.verbose || this.options.debug) {
-      console.log(`[WeChatExtractor] ${message}`);
-    }
-  }
-
-  /**
-   * 清理提取的内容，移除噪音元素
-   */
-  cleanExtractedContent(content, url, documentObj = null) {
-    if (!content) return '';
-    
-    try {
-      // 微信公众号文章不需要额外清理，它们通常已经很干净了
-      if (url.includes('mp.weixin.qq.com')) {
-        return content;
+      if (data) {
+        console.log(`[WeChatExtractor] ${message}`, data);
+      } else {
+        console.log(`[WeChatExtractor] ${message}`);
       }
-      
-      // 创建临时DOM元素进行清理
-      const tempDiv = this.createTempElement(content, documentObj);
-      
-      // 1. 使用现有的通用清理规则
-      this.applyCleanupRules(tempDiv, url);
-      
-      // 2. 移除模板语法内容（通用检测）
-      this.removeTemplateContent(tempDiv, documentObj);
-      
-      // 3. 清理空白元素
-      this.removeEmptyElements(tempDiv);
-      
-      return tempDiv.innerHTML;
-      
-    } catch (error) {
-      this.log(`内容清理出错: ${error.message}`, null, 'warn');
-      return content; // 出错时返回原内容
     }
   }
 
   /**
-   * 应用现有的清理规则
+   * Cleans the extracted HTML content by removing noise, templates, and junk elements.
+   * Follows a structured, multi-step process for robustness.
    */
-  applyCleanupRules(tempDiv, url) {
-    // 应用通用清理规则
-    CLEANUP_SELECTORS.general.forEach(selector => {
-      const elements = tempDiv.querySelectorAll(selector);
-      elements.forEach(el => el.remove());
-    });
-    
-    // 额外的通用噪音元素
-    const additionalSelectors = [
+  cleanExtractedContent(htmlContent, url, document) {
+    this.log('--- Starting HTML Content Cleanup ---', { url }, 'debug');
+    if (!htmlContent) return '';
+
+    try {
+      const initialLength = htmlContent.length;
+      this.log(`🧹 Starting HTML cleanup. Initial length: ${initialLength}`, null, 'debug');
+
+      // Step 1: Create a DOM structure to work with.
+      const tempDiv = this.createTempElement(htmlContent, document);
+
+      // Step 2: Perform DOM-based cleanup. This is safer for complex structures.
+      this.removeJunkElements(tempDiv); // Remove ads, footers, etc.
+      this.removeTemplateCodeNodes(tempDiv); // Remove <script> tags with templates.
+
+      // Step 3: Serialize back to an HTML string.
+      let cleanedHtml = tempDiv.innerHTML;
+      this.log(`📊 Length after initial DOM cleanup: ${cleanedHtml.length}`, null, 'debug');
+
+      // Step 4: Perform regex-based cleanup as a final fallback for anything the DOM parser missed.
+      cleanedHtml = this.removeTemplateContent(cleanedHtml);
+      
+      // Step 5: Final pass to remove empty tags created by the cleanup process.
+      const finalDiv = this.createTempElement(cleanedHtml, document);
+      this.removeEmptyElements(finalDiv);
+      
+      const finalContent = finalDiv.innerHTML;
+      this.log(`✅ Cleanup complete. Final length: ${finalContent.length} (Total removed: ${initialLength - finalContent.length} chars)`, null, 'debug');
+      
+      return finalContent;
+
+    } catch (error) {
+      this.log(`❌ Content cleanup failed: ${error.message}`, { stack: error.stack }, 'error');
+      return htmlContent; // Return original content on failure.
+    }
+  }
+
+  /**
+   * Removes common junk elements like ads, comments, and footers using selectors.
+   */
+  removeJunkElements(tempDiv) {
+    this.log('[DOM Cleanup] Removing junk elements...', null, 'debug');
+    let totalRemoved = 0;
+    const selectors = [
+      ...CLEANUP_SELECTORS.general,
       'input[type="hidden"]',
       'meta',
-      'link', 
+      'link',
       'template',
       '[class*="comment"]',
       '[class*="share"]',
       '[id*="comment"]',
       '[id*="share"]'
     ];
-    
-    additionalSelectors.forEach(selector => {
-      const elements = tempDiv.querySelectorAll(selector);
-      elements.forEach(el => el.remove());
-    });
-  }
 
-  /**
-   * 移除包含模板语法的内容
-   */
-  removeTemplateContent(tempDiv, documentObj = null) {
-    const allTextNodes = this.getAllTextNodes(tempDiv);
-    
-    allTextNodes.forEach(node => {
-      const text = node.textContent || '';
-      if (this.containsTemplateCode(text)) {
-        // 移除包含模板代码的父元素
-        let parent = node.parentElement;
-        if (parent && parent !== tempDiv) {
-          if (parent.remove) {
-            parent.remove();
-          } else if (parent.parentNode) {
-            parent.parentNode.removeChild(parent);
-          }
-        }
+    selectors.forEach(selector => {
+      const elements = tempDiv.querySelectorAll(selector);
+      if (elements.length > 0) {
+        this.log(`[DOM Cleanup] Removing ${elements.length} element(s) matching selector: "${selector}"`, null, 'debug');
+        elements.forEach(el => el.remove());
+        totalRemoved += elements.length;
       }
     });
-    
-    // 清理HTML中残留的模板语法
-    if (tempDiv.innerHTML) {
-      tempDiv.innerHTML = tempDiv.innerHTML
-        .replace(/<%[\s\S]*?%>/g, '')      // EJS模板
-        .replace(/\{\{[\s\S]*?\}\}/g, '')   // Handlebars/Vue模板
-        .replace(/[^<>\n]{800,}/g, '');     // 过长的单行内容（可能是脚本）
-    }
+    this.log(`[DOM Cleanup] Finished removing junk elements. Total removed: ${totalRemoved}.`, null, 'debug');
   }
 
   /**
-   * 获取所有文本节点
+   * Removes <script> tags that are either templates or contain template-like code.
+   * This is a DOM-based operation.
+   */
+  removeTemplateCodeNodes(tempDiv) {
+    this.log('[DOM Cleanup] Starting DOM-based script removal...', null, 'debug');
+    const scripts = tempDiv.querySelectorAll('script');
+    let removedCount = 0;
+
+    if (scripts.length === 0) {
+      this.log('[DOM Cleanup] No <script> tags found to inspect.', null, 'debug');
+      return;
+    }
+
+    this.log(`[DOM Cleanup] Found ${scripts.length} <script> tags to inspect.`, null, 'debug');
+
+    scripts.forEach((script, index) => {
+      const scriptId = script.id ? `#${script.id}` : '';
+      const scriptType = script.type ? `[type="${script.type}"]` : '';
+      const selectorForLog = `script${scriptId}${scriptType}`;
+      const contentPreview = (script.textContent || '').substring(0, 80).replace(/\n/g, ' ');
+
+      // Condition 1: Remove <script type="text/html"> which are always templates.
+      if (script.type === 'text/html') {
+        this.log(`[DOM Cleanup] Removing template script ${index + 1}/${scripts.length}: ${selectorForLog}`, null, 'debug');
+        script.remove();
+        removedCount++;
+        return; // Continue to next script
+      }
+
+      // Condition 2: Remove scripts containing template code or specific JS patterns.
+      if (this.containsTemplateCode(script.textContent)) {
+        this.log(`[DOM Cleanup] Removing script ${index + 1}/${scripts.length} with template content: ${selectorForLog}. Preview: "${contentPreview}..."`, null, 'debug');
+        script.remove();
+        removedCount++;
+      }
+    });
+
+    this.log(`[DOM Cleanup] Finished. Removed ${removedCount} of ${scripts.length} script tags.`, null, 'debug');
+  }
+
+  /**
+   * A regex-based fallback to clean any template scripts missed by the DOM parser.
+   * Operates on the HTML string.
+   */
+  removeTemplateContent(html) {
+    this.log('[Regex Cleanup] Starting regex-based cleanup as a fallback.', null, 'debug');
+    if (!html || typeof html !== 'string') {
+      this.log('[Regex Cleanup] Input is not a string, skipping.', null, 'warn');
+      return html || '';
+    }
+    const initialLength = html.length;
+
+    // This regex is a fallback to catch scripts that might have been missed by the DOM parser.
+    // It looks for <script type="text/html"> or scripts containing common template patterns.
+        const templateScriptRegex = /<script[^>]*type=[\"']text\/html[\"'][^>]*>[\s\S]*?<\/script>|<script[^>]*>[\s\S]*?(setupWebViewJavascriptBridge|WVJBCallbacks|<%|%>)<\/script>/gi;
+    
+    const cleanedHtml = html.replace(templateScriptRegex, '');
+    const removedChars = initialLength - cleanedHtml.length;
+
+    if (removedChars > 0) {
+      this.log(`[Regex Cleanup] Removed ${removedChars} characters.`, null, 'debug');
+    } else {
+      this.log('[Regex Cleanup] No template content found to remove via regex.', null, 'debug');
+    }
+    
+    return cleanedHtml;
+  }
+
+  /**
+   * Gets all text nodes within a given element.
    */
   getAllTextNodes(element) {
     const textNodes = [];
-    
-    // 环境适配的文本节点遍历
-    if (this.options.environment === 'browser') {
-      try {
-        // 浏览器环境或支持TreeWalker的环境
-        const doc = element.ownerDocument;
-        const NodeFilterConst = doc.defaultView.NodeFilter || { SHOW_TEXT: 4 };
-        
-        const walker = doc.createTreeWalker(
-          element,
-          NodeFilterConst.SHOW_TEXT,
-          null,
-          false
-        );
-        
-        let node;
-        while (node = walker.nextNode()) {
-          textNodes.push(node);
-        }
-      } catch (error) {
-        this.log(`TreeWalker出错，回退到递归方法: ${error.message}`);
-        // 回退到递归方法
-        this.recursiveTextNodeSearch(element, textNodes);
-      }
-    } else {
-      // Node.js环境的递归实现
-      this.recursiveTextNodeSearch(element, textNodes);
-    }
-    
+    this.recursiveTextNodeSearch(element, textNodes);
     return textNodes;
   }
   
   /**
-   * 递归搜索文本节点
+   * Recursively searches for text nodes.
    */
   recursiveTextNodeSearch(node, textNodes) {
     if (node.nodeType === 3) { // TEXT_NODE
@@ -1150,42 +1146,43 @@ export class WeChatExtractor {
   }
 
   /**
-   * 移除空白元素
+   * Removes elements that are empty or contain only whitespace.
    */
   removeEmptyElements(tempDiv) {
-    // 多次清理，因为移除元素后可能产生新的空元素
+    // Multiple passes to handle nested empty elements.
     for (let i = 0; i < 3; i++) {
-      const emptyElements = tempDiv.querySelectorAll('*');
+      const emptyElements = tempDiv.querySelectorAll('*:not(img):not(input):not(textarea):not(select)');
       let removed = false;
       
       emptyElements.forEach(el => {
-        const text = el.textContent?.trim() || '';
-        const hasImages = el.querySelectorAll('img').length > 0;
-        const hasInputs = el.querySelectorAll('input, textarea, select').length > 0;
-        
-        // 只移除真正空白且没有有用内容的元素
-        if (!text && !hasImages && !hasInputs && 
-            (text === '' || text === '\u00A0' || text === '&nbsp;')) {
+        // Check if element has no children and no meaningful text content.
+        if (el.children.length === 0 && (el.textContent?.trim() || '') === '') {
           el.remove();
           removed = true;
         }
       });
       
-      if (!removed) break; // 如果没有移除任何元素，停止循环
+      if (!removed) break; // If no elements were removed, the job is done.
     }
   }
 
   /**
-   * 检查文本是否包含模板代码（简化版本）
+   * Checks if a string contains template code or suspicious JavaScript patterns.
    */
   containsTemplateCode(text) {
-    if (!text || typeof text !== 'string' || text.length < 20) return false;
+    if (!text || typeof text !== 'string' || text.length < 10) return false;
     
-    // 简化的模板检测：只检测最明显的特征
+    // Simplified but effective template detection.
     const hasTemplateDelimiters = /<%|%>|\{\{|\}\}/.test(text);
-    const hasJavaScript = /function\s*\(|var\s+\w+\s*=|document\.|window\./.test(text);
-    const isLongSingleLine = text.length > 500 && text.split('\n').length < 3;
+    const hasSuspiciousJS = /setupWebViewJavascriptBridge|WVJBCallbacks|bridge\.callHandler/.test(text);
     
-    return hasTemplateDelimiters || (hasJavaScript && isLongSingleLine);
+    const result = hasTemplateDelimiters || hasSuspiciousJS;
+    
+    if (result && this.options?.debug) {
+      this.log(`[Template Check] Detected template code. Delimiters: ${hasTemplateDelimiters}, Suspicious JS: ${hasSuspiciousJS}.`, null, 'debug');
+      this.log(`[Template Check] Content preview: "${text.substring(0, 150).replace(/\n/g, '\\n')}"`, null, 'debug');
+    }
+    
+    return result;
   }
-} 
+}

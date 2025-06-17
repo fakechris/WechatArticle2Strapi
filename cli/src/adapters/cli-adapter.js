@@ -405,6 +405,8 @@ export class CLIAdapter {
 
     let updatedHtmlContent = htmlContent; // Use the passed-in htmlContent
     if (urlToLocalPathMap.size > 0 && htmlContent) {
+      this.log(`Updating HTML content with ${urlToLocalPathMap.size} local image paths.`, null, 'info');
+      this.log('Image URL to local path map:', urlToLocalPathMap, 'debug');
       this.log(`Attempting to update HTML content. ${urlToLocalPathMap.size} images mapped. HTML length: ${htmlContent.length}`, null, 'debug');
       if (this.options.debug && htmlContent) {
         this.log(`>>> processImagesForCLI: Raw htmlContent (first 2000 chars): ${htmlContent.substring(0, 2000)}`);
@@ -420,7 +422,8 @@ export class CLIAdapter {
       pretendToBeVisual: true,
       virtualConsole: this.createVirtualConsole()
     });
-        const document = dom.window.document;
+                const document = dom.window.document;
+        this.log('JSDOM parsed body outerHTML:', document.body.outerHTML, 'debug');
         let replacementsMade = 0;
         // One-time debug log for JSDOM's parsed body for this call
         if (this.options.debug && !this.loggedDomBodyThisCall) {
@@ -451,31 +454,30 @@ export class CLIAdapter {
             this.loggedAllImageSourcesInDOMThisCall = true;
         }
 
-        urlToLocalPathMap.forEach((localPath, originalUrl) => {
-          this.log(`HTMLUpdate: Processing mapping: '${originalUrl}' -> '${localPath}'`, null, 'debug');
-          
-          // Update src attributes
-          const imgTagsWithSrc = document.querySelectorAll(`img[src="${originalUrl}"]`);
-          if (imgTagsWithSrc.length > 0) {
-            this.log(`HTMLUpdate: Found ${imgTagsWithSrc.length} img tags with src="${originalUrl}"`, null, 'debug');
-            imgTagsWithSrc.forEach(tag => {
-              tag.setAttribute('src', localPath);
-              replacementsMade++;
-              this.log(`HTMLUpdate: Replaced src for "${originalUrl}" with "${localPath}"`, null, 'debug');
-            });
+        const allImages = document.querySelectorAll('img');
+        this.log(`Found ${allImages.length} total <img> tags in the document. Iterating to match against the map.`, null, 'debug');
+
+        allImages.forEach(img => {
+          const originalSrc = img.getAttribute('src');
+          const originalDataSrc = img.getAttribute('data-src');
+
+          if (originalSrc && urlToLocalPathMap.has(originalSrc)) {
+            const localPath = urlToLocalPathMap.get(originalSrc);
+            img.setAttribute('src', localPath);
+            this.log(`Replaced src: "${originalSrc.substring(0, 100)}..." with "${localPath}"`, null, 'debug');
+            replacementsMade++;
           }
 
-          // Update data-src attributes
-          const imgTagsWithDataSrc = document.querySelectorAll(`img[data-src="${originalUrl}"]`);
-          if (imgTagsWithDataSrc.length > 0) {
-            this.log(`HTMLUpdate: Found ${imgTagsWithDataSrc.length} img tags with data-src="${originalUrl}"`, null, 'debug');
-            imgTagsWithDataSrc.forEach(tag => {
-              tag.setAttribute('data-src', localPath);
-              replacementsMade++;
-              this.log(`HTMLUpdate: Replaced data-src for "${originalUrl}" with "${localPath}"`, null, 'debug');
-            });
+          if (originalDataSrc && urlToLocalPathMap.has(originalDataSrc)) {
+            const localPath = urlToLocalPathMap.get(originalDataSrc);
+            img.setAttribute('data-src', localPath);
+            // Also update src if it was the same as data-src, a common lazy-loading pattern
+            if (originalSrc === originalDataSrc) {
+              img.setAttribute('src', localPath);
+            }
+            this.log(`Replaced data-src: "${originalDataSrc.substring(0, 100)}..." with "${localPath}"`, null, 'debug');
+            replacementsMade++;
           }
-          // Consider other attributes like 'srcset' if necessary in the future
         });
 
         if (replacementsMade > 0) {

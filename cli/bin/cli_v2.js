@@ -92,33 +92,28 @@ program
 
       // 加载配置
       const configManager = new ConfigManager(options.config);
-      let config = null;
-      
+      await configManager.load(); // 始终尝试加载配置文件
+      const config = configManager.get(); // 获取配置，可能为空
+
+      // 如果使用 --strapi，则配置必须存在且有效
       if (options.strapi) {
-        const configLoaded = await configManager.load();
-        if (!configLoaded) {
-          console.log(chalk.yellow('⚠️ 没有找到配置文件。正在创建模板...'));
+        if (!configManager.isConfigLoaded()) {
+          console.log(chalk.yellow('⚠️ 使用 --strapi 时需要配置文件。正在创建模板...'));
           const configPath = await configManager.createTemplate();
           console.log(chalk.yellow(`📝 请编辑 ${configPath} 中的Strapi设置后再使用 --strapi`));
           process.exit(1);
         }
-        config = configManager.get();
         
         // 验证Strapi配置
-        const validation = configManager.validate();
-        if (!validation.valid) {
-          console.error(chalk.red('❌ Strapi配置错误:'));
-          validation.errors.forEach(error => {
-            console.error(chalk.red(`  • ${error}`));
-          });
+        if (!config.strapiUrl || !config.token || !config.collection) {
+          console.error(chalk.red('❌ 错误: Strapi配置不完整。请检查您的配置文件。'));
           process.exit(1);
         }
-        
-        // 应用CLI选项覆盖配置
-        if (options.uploadImages || options.headImage) {
-          config.advancedSettings = config.advancedSettings || {};
-          config.advancedSettings.uploadImages = options.uploadImages;
-          config.advancedSettings.uploadHeadImg = options.headImage;
+      }
+
+      // 合并命令行选项到配置
+      if (config && config.advancedSettings) {
+        if (options.maxImages) {
           config.advancedSettings.headImgIndex = parseInt(options.headImageIndex);
           config.advancedSettings.maxImages = parseInt(options.maxImages);
           config.advancedSettings.imageQuality = parseFloat(options.quality);
