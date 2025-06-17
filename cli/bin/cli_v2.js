@@ -189,45 +189,41 @@ program
       
       if ((options.debug || options.output === 'json') && !options.strapi) {
         try {
-          if (config) {
-            // 有配置文件，使用真实配置生成数据
-            const { StrapiIntegration } = await import('../../shared/core/integrations/strapi-integration.js');
-            const debugStrapiIntegration = new StrapiIntegration(config, {
-              environment: 'browser',
-              verbose: options.verbose,
-              debug: options.debug
-            });
+          // 无论有没有配置文件，都使用统一的 StrapiIntegration 处理逻辑
+          const { StrapiIntegration } = await import('../../shared/core/integrations/strapi-integration.js');
+          
+          // 使用真实配置或创建临时配置
+          const debugConfig = config || {
+            strapiUrl: 'https://your-strapi.com',
+            token: 'your-api-token',
+            collection: 'your-collection-name',
+            fieldMapping: {
+              enabled: false,
+              fields: {}
+            },
+            advancedSettings: {
+              sanitizeContent: true,
+              maxContentLength: 50000
+            }
+          };
+          
+          const debugStrapiIntegration = new StrapiIntegration(debugConfig, {
+            environment: 'browser',
+            verbose: options.verbose,
+            debug: options.debug
+          });
 
-            const strapiPayload = debugStrapiIntegration.buildStrapiData(result.article, [], null);
-            result.strapi = {
-              debugMode: true,
-              configFound: true,
-              payload: strapiPayload,
-              collection: config.collection,
-              endpoint: `${config.strapiUrl}/api/${config.collection}`
-            };
-          } else {
-            // 没有配置文件，生成基本的数据结构示例
-            result.strapi = {
-              debugMode: true,
-              configFound: false,
-              note: "No config file found. This shows the basic data structure that would be sent to Strapi.",
-              payload: {
-                title: result.article.title || '',
-                content: result.article.content || '',
-                summary: result.article.digest || '',
-                slug: result.article.slug || '',
-                news_from_web: result.article.siteName || 'WeChat',
-                // 基本字段映射示例
-                url: result.article.url,
-                author: result.article.author || '',
-                publishTime: result.article.publishTime || '',
-                images: result.article.images?.images?.length || 0
-              },
-              collection: "your-collection-name",
-              endpoint: "https://your-strapi.com/api/your-collection-name"
-            };
-          }
+          // 统一使用 buildStrapiData 方法，它内部会调用 sanitizeContent
+          const strapiPayload = debugStrapiIntegration.buildStrapiData(result.article);
+          
+          result.strapi = {
+            debugMode: true,
+            configFound: !!config,
+            payload: strapiPayload,
+            collection: debugConfig.collection,
+            endpoint: `${debugConfig.strapiUrl}/api/${debugConfig.collection}`,
+            note: !config ? "No config file found. Showing processed content structure." : undefined
+          };
           
           if (options.verbose) {
             console.log(chalk.gray('🔍 调试模式: 已生成 Strapi 数据结构（未实际发送）'));
