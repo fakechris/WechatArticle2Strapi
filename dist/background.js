@@ -1980,6 +1980,7 @@ class NodeHttpClient {
     const { default: axios } = await __webpack_require__.e(/* import() */ 787).then(__webpack_require__.bind(__webpack_require__, 787));
     return axios;
   }
+
 } 
 ;// ./src/background-refactored.js
 /**

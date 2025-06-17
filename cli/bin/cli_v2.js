@@ -7,7 +7,9 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import fsAsync from 'fs/promises';
 import { readFileSync } from 'fs';
+import path from 'path';
 import validator from 'validator';
 import { PlaywrightAdapter } from '../src/adapters/playwright-adapter.js';
 import { isWeChatArticleUrl } from '../../shared/utils/url-utils.js';
@@ -90,33 +92,28 @@ program
 
       // 加载配置
       const configManager = new ConfigManager(options.config);
-      let config = null;
-      
+      const loaded = await configManager.load(); // 始终尝试加载配置文件
+      const config = configManager.get(); // 获取配置，可能为空
+
+      // 如果使用 --strapi，则配置必须存在且有效
       if (options.strapi) {
-        const configLoaded = await configManager.load();
-        if (!configLoaded) {
-          console.log(chalk.yellow('⚠️ 没有找到配置文件。正在创建模板...'));
+        if (!loaded) {
+          console.log(chalk.yellow('⚠️ 使用 --strapi 时需要配置文件。正在创建模板...'));
           const configPath = await configManager.createTemplate();
           console.log(chalk.yellow(`📝 请编辑 ${configPath} 中的Strapi设置后再使用 --strapi`));
           process.exit(1);
         }
-        config = configManager.get();
         
         // 验证Strapi配置
-        const validation = configManager.validate();
-        if (!validation.valid) {
-          console.error(chalk.red('❌ Strapi配置错误:'));
-          validation.errors.forEach(error => {
-            console.error(chalk.red(`  • ${error}`));
-          });
+        if (!config.strapiUrl || !config.token || !config.collection) {
+          console.error(chalk.red('❌ 错误: Strapi配置不完整。请检查您的配置文件。'));
           process.exit(1);
         }
-        
-        // 应用CLI选项覆盖配置
-        if (options.uploadImages || options.headImage) {
-          config.advancedSettings = config.advancedSettings || {};
-          config.advancedSettings.uploadImages = options.uploadImages;
-          config.advancedSettings.uploadHeadImg = options.headImage;
+      }
+
+      // 合并命令行选项到配置
+      if (config && config.advancedSettings) {
+        if (options.maxImages) {
           config.advancedSettings.headImgIndex = parseInt(options.headImageIndex);
           config.advancedSettings.maxImages = parseInt(options.maxImages);
           config.advancedSettings.imageQuality = parseFloat(options.quality);
@@ -180,9 +177,75 @@ program
         }
       }
 
+      // 调试模式下，即使没有 --strapi 也生成准备发送给 Strapi 的数据
+      if (options.debug) {
+        console.log(chalk.gray(`🔍 调试检查: debug=${options.debug}, output=${options.output}, strapi=${options.strapi}, config=${!!config}`));
+      }
+      
+      if ((options.debug || options.output === 'json') && !options.strapi) {
+        try {
+          // 无论有没有配置文件，都使用统一的 StrapiIntegration 处理逻辑
+          const { StrapiIntegration } = await import('../../shared/core/integrations/strapi-integration.js');
+          
+          // 使用真实配置或创建临时配置
+          const debugConfig = config || {
+            strapiUrl: 'https://your-strapi.com',
+            token: 'your-api-token',
+            collection: 'your-collection-name',
+            fieldMapping: {
+              enabled: false,
+              fields: {}
+            },
+            advancedSettings: {
+              sanitizeContent: true,
+              maxContentLength: 50000
+            }
+          };
+          
+          const debugStrapiIntegration = new StrapiIntegration(debugConfig, {
+            environment: 'browser',
+            verbose: options.verbose,
+            debug: options.debug
+          });
+
+          // 统一使用 buildStrapiData 方法，它内部会调用 sanitizeContent
+          const strapiPayload = debugStrapiIntegration.buildStrapiData(result.article);
+          
+          result.strapi = {
+            debugMode: true,
+            configFound: !!config,
+            payload: strapiPayload,
+            collection: debugConfig.collection,
+            endpoint: `${debugConfig.strapiUrl}/api/${debugConfig.collection}`,
+            note: !config ? "No config file found. Showing processed content structure." : undefined
+          };
+          
+          if (options.verbose) {
+            console.log(chalk.gray('🔍 调试模式: 已生成 Strapi 数据结构（未实际发送）'));
+          }
+        } catch (debugError) {
+          if (options.verbose || options.debug) {
+            console.log(chalk.yellow(`⚠️ Strapi 数据生成失败: ${debugError.message}`));
+          }
+        }
+      }
+
       // 输出结果
       if (options.output === 'json') {
-        console.log(JSON.stringify(result, null, 2));
+        const jsonOutput = JSON.stringify(result, null, 2);
+        console.log(jsonOutput);
+
+        // Save JSON to file
+        const outputDir = path.join(process.cwd(), 'output');
+        const outputFilePath = path.join(outputDir, 'article_output.json');
+        try {
+          await fsAsync.mkdir(outputDir, { recursive: true });
+          await fsAsync.writeFile(outputFilePath, jsonOutput);
+          console.log(chalk.green(`📄 JSON output saved to ${outputFilePath}`));
+        } catch (error) {
+          console.error(chalk.red(`❌ Error saving JSON to file: ${error.message}`));
+          // Optionally set process.exitCode = 1 here if saving is critical
+        }
       } else {
         adapter.printExtractionReport(result);
         

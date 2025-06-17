@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obsidian 风格选择功能测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2e3440;
+            border-bottom: 3px solid #5e81ac;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #3b4252;
+            margin-top: 30px;
+        }
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #88c0d0;
+            border-radius: 0 5px 5px 0;
+        }
+        .highlight-area {
+            background: #ebcb8b20;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border: 1px dashed #ebcb8b;
+        }
+        .code-block {
+            background: #2e3440;
+            color: #d8dee9;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            overflow-x: auto;
+        }
+        .status-display {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #5e81ac;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1000;
+            max-width: 300px;
+        }
+        button {
+            background: #5e81ac;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #4c566a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Obsidian 风格选择功能测试页面</h1>
+        
+        <div class="status-display" id="status">
+            等待测试...
+        </div>
+        
+        <div class="test-section">
+            <h2>📝 测试说明</h2>
+            <p>这个页面用于测试基于 <strong>Obsidian Clipper</strong> 方法实现的选择功能。新的实现特点：</p>
+            <ul>
+                <li>✅ 使用 <code>getSelectionHtml()</code> 方法直接获取选择的HTML</li>
+                <li>✅ 在按钮点击时立即检测选择状态（不预先轮询）</li>
+                <li>✅ 简化了消息传递流程</li>
+                <li>✅ 增强了错误处理和回退机制</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h2>🎯 选择测试区域</h2>
+            
+            <div class="highlight-area">
+                <h3>短文本测试</h3>
+                <p>这是一段短文本，适合测试简单的文本选择功能。请选择这段文字的一部分来测试选择检测是否正常工作。</p>
+            </div>
+            
+            <div class="highlight-area">
+                <h3>长文本测试</h3>
+                <p>这是一段较长的文本，用于测试Obsidian方法在处理大量选择内容时的性能。这段文字包含多个句子，有助于验证选择功能在处理复杂内容时的稳定性。根据Obsidian项目的issue #446，某些情况下长文本选择可能存在问题，我们的新实现应该能够更好地处理这种情况。</p>
+                <p>这里还有更多的内容，包括不同的段落结构，用来测试DOM结构的复杂性对选择功能的影响。新的实现直接使用HTML内容而不是纯文本，这应该能更好地保持格式。</p>
+            </div>
+            
+            <div class="highlight-area">
+                <h3>HTML结构测试</h3>
+                <p>这段内容包含<strong>粗体文字</strong>、<em>斜体文字</em>和<code>代码片段</code>。</p>
+                <ul>
+                    <li>列表项目 1</li>
+                    <li>列表项目 2 <a href="#test">带链接</a></li>
+                    <li>列表项目 3</li>
+                </ul>
+                <p>选择包含这些HTML元素的内容来测试结构保持能力。</p>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔧 测试工具</h2>
+            <button onclick="testSelectionDetection()">手动测试选择检测</button>
+            <button onclick="simulateObsidianMethod()">模拟 Obsidian 方法</button>
+            <button onclick="clearStatus()">清除状态</button>
+            
+            <div class="code-block">
+                <div>控制台日志输出：</div>
+                <div id="console-output">等待测试...</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📊 对比分析</h2>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="background: #eceff4;">
+                    <th style="padding: 10px; border: 1px solid #d8dee9;">方面</th>
+                    <th style="padding: 10px; border: 1px solid #d8dee9;">原实现</th>
+                    <th style="padding: 10px; border: 1px solid #d8dee9;">Obsidian 方法</th>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">检测时机</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">定期轮询 (1秒间隔)</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">按钮点击时立即检测</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">选择方法</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">getSelectionInfo() 返回对象</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">getSelectionHtml() 返回HTML</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">消息流程</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">多步骤消息传递</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">简化的单步处理</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">错误处理</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">复杂的回退逻辑</td>
+                    <td style="padding: 10px; border: 1px solid #d8dee9;">简单的回退到全页面</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 模拟 Obsidian 的 getSelectionHtml 方法
+        function getSelectionHtml() {
+            let html = "";
+            if (typeof window.getSelection !== "undefined") {
+                const sel = window.getSelection();
+                if (sel.rangeCount && !sel.isCollapsed) {
+                    const container = document.createElement("div");
+                    for (let i = 0; i < sel.rangeCount; i++) {
+                        try {
+                            container.appendChild(sel.getRangeAt(i).cloneContents());
+                        } catch (error) {
+                            console.error('复制选择内容失败:', error);
+                        }
+                    }
+                    html = container.innerHTML;
+                }
+            }
+            return html;
+        }
+
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            const colors = {
+                info: '#5e81ac',
+                success: '#a3be8c',
+                warning: '#ebcb8b',
+                error: '#bf616a'
+            };
+            status.style.backgroundColor = colors[type] || colors.info;
+            status.textContent = message;
+            
+            // 也更新控制台输出
+            const output = document.getElementById('console-output');
+            const timestamp = new Date().toLocaleTimeString();
+            output.innerHTML += `<br/>[${timestamp}] ${message}`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function testSelectionDetection() {
+            const selectionHtml = getSelectionHtml();
+            const selectionText = window.getSelection().toString();
+            
+            if (selectionHtml) {
+                updateStatus(`✅ 检测到选择: ${selectionHtml.length}字符 HTML, ${selectionText.length}字符文本`, 'success');
+                console.log('选择HTML:', selectionHtml);
+                console.log('选择文本:', selectionText);
+            } else {
+                updateStatus('❌ 未检测到选择内容', 'warning');
+            }
+        }
+
+        function simulateObsidianMethod() {
+            const sel = window.getSelection();
+            updateStatus(`📊 Selection状态: ranges=${sel.rangeCount}, collapsed=${sel.isCollapsed}, text="${sel.toString().substring(0, 30)}..."`, 'info');
+            
+            console.log('Obsidian方法详细信息:', {
+                rangeCount: sel.rangeCount,
+                isCollapsed: sel.isCollapsed,
+                textLength: sel.toString().length,
+                htmlLength: getSelectionHtml().length
+            });
+        }
+
+        function clearStatus() {
+            document.getElementById('console-output').innerHTML = '控制台已清除...';
+            updateStatus('状态已重置', 'info');
+        }
+
+        // 监听选择变化
+        document.addEventListener('selectionchange', () => {
+            const sel = window.getSelection();
+            if (sel.toString().length > 0) {
+                updateStatus(`🎯 选择变化: ${sel.toString().length}字符`, 'info');
+            }
+        });
+
+        // 初始化
+        updateStatus('页面已加载，开始测试 Obsidian 风格选择功能', 'success');
+    </script>
+</body>
+</html> 

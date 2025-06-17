@@ -141,6 +141,13 @@ export class PlaywrightAdapter extends CLIAdapter {
       // 创建新页面
       page = await this.context.newPage();
 
+      // 增加浏览器控制台日志输出
+      page.on('console', msg => {
+        const type = msg.type().toUpperCase();
+        const text = msg.text();
+        this.log(`[Browser Console] ${type}: ${text}`, null, 'debug');
+      });
+
       // 设置超时
       page.setDefaultTimeout(this.playwrightOptions.waitTimeout);
       page.setDefaultNavigationTimeout(this.playwrightOptions.waitTimeout);
@@ -245,35 +252,22 @@ export class PlaywrightAdapter extends CLIAdapter {
   async waitForJinrongbaguanvContent(page) {
     try {
       this.log('开始等待金融八卦女网站内容加载...');
-      
+
       // 第一阶段：等待基础页面加载
-      await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => this.log('DOM content loaded timeout, continuing...', null, 'debug'));
       this.log('DOM内容已加载');
-      
+
       // 第二阶段：等待更多具体的内容元素
       const contentLoaded = await Promise.race([
         // 方案1：等待具体的文章内容（更长的内容）
         page.waitForFunction(() => {
-          // 寻找包含实际文章内容的元素
-          const selectors = [
-            '.article-content', '.content', '.detail-content', '.news-content',
-            '.main-content', '.post-content', '.text-content', '.article-body',
-            'main', 'article', '[class*="content"]', '[class*="detail"]',
-            '[class*="article"]', '[class*="news"]'
-          ];
-          
+          const selectors = ['.article-content', '.content', '.detail-content', '.news-content', '.main-content', '.post-content', '.text-content', '.article-body', 'main', 'article', '[class*="content"]', '[class*="detail"]', '[class*="article"]', '[class*="news"]'];
           for (const selector of selectors) {
             const elements = document.querySelectorAll(selector);
             for (const element of elements) {
               if (element && element.innerText) {
                 const text = element.innerText.trim();
-                // 检查是否包含关键词（文章标题的部分）
-                if (text.length > 1000 && (
-                  text.includes('降准降息') || 
-                  text.includes('潘功胜') || 
-                  text.includes('三大类政策') ||
-                  text.includes('十项措施')
-                )) {
+                if (text.length > 1000 && (text.includes('降准降息') || text.includes('潘功胜') || text.includes('三大类政策') || text.includes('十项措施'))) {
                   console.log('找到匹配内容区域:', selector, '长度:', text.length);
                   return true;
                 }
@@ -281,17 +275,23 @@ export class PlaywrightAdapter extends CLIAdapter {
             }
           }
           return false;
-        }, { timeout: this.playwrightOptions.waitTimeout }),
+        }, { timeout: this.playwrightOptions.waitTimeout }).catch(() => {
+          this.log('Wait for function timed out', null, 'debug');
+          return false;
+        }),
 
         // 方案2：等待网络空闲
         page.waitForLoadState('networkidle', { timeout: Math.min(this.playwrightOptions.waitTimeout, 20000) })
           .then(() => {
             this.log('网络空闲状态达成');
             return true;
+          }).catch(() => {
+            this.log('Wait for network idle timed out', null, 'debug');
+            return false;
           }),
 
         // 方案3：等待图片加载（如果启用）
-        this.playwrightOptions.loadImages ? 
+        this.playwrightOptions.loadImages ?
           page.waitForFunction(() => {
             const images = Array.from(document.images);
             const loadedImages = images.filter(img => img.complete && img.naturalHeight > 0);
@@ -300,7 +300,10 @@ export class PlaywrightAdapter extends CLIAdapter {
             .then(() => {
               this.log('图片已加载');
               return true;
-            }) : 
+            }).catch(() => {
+              this.log('Wait for images timed out', null, 'debug');
+              return false;
+            }) :
           Promise.resolve(true)
       ]);
 
@@ -312,24 +315,29 @@ export class PlaywrightAdapter extends CLIAdapter {
       const additionalWait = Math.max(3000, this.playwrightOptions.waitTimeout * 0.1);
       this.log(`额外等待 ${additionalWait}ms 确保动态内容完全加载...`);
       await new Promise(resolve => setTimeout(resolve, additionalWait));
-      
+
+      this.log('准备验证内容质量 (pre-evaluate)');
       // 验证内容质量
       const contentInfo = await page.evaluate(() => {
+        console.log('[evaluate] 开始验证内容质量');
         const body = document.body;
         const bodyText = body ? body.innerText : '';
         const articleKeywords = ['降准降息', '潘功胜', '三大类政策', '十项措施'];
         const hasKeywords = articleKeywords.some(keyword => bodyText.includes(keyword));
         
-        return {
+        const result = {
           bodyTextLength: bodyText.length,
           hasKeywords: hasKeywords,
           title: document.title
         };
+        console.log('[evaluate] 内容质量验证完成, 结果:', JSON.stringify(result));
+        return result;
       });
       
+      this.log('内容质量验证成功 (post-evaluate)');
       this.log('内容验证结果', contentInfo);
       this.log('金融八卦女网站内容已加载');
-      
+
     } catch (error) {
       this.log(`金融八卦女网站等待策略出现错误: ${error.message}`, null, 'warn');
       this.log('使用已加载内容继续处理', null, 'warn');
@@ -729,6 +737,19 @@ export class PlaywrightAdapter extends CLIAdapter {
      try {
        await page.goto(url, { waitUntil: 'domcontentloaded' });
        await this.waitForPageContent(page, url);
+
+       // First, get the final rendered HTML from the page
+       const html = await page.content();
+       if (!html) {
+         throw new Error('Failed to get HTML content from the page.');
+       }
+
+       // Now, parse it with JSDOM to create a standard `document` object
+       const { JSDOM } = require('jsdom');
+       const dom = new JSDOM(html, { url });
+
+       // Finally, pass the JSDOM `document` to the extractor
+       const article = await this.extractor.extract(dom.window.document, url);
 
        const screenshotPath = filename || `screenshot-${Date.now()}.png`;
        const screenshot = await page.screenshot({ 
