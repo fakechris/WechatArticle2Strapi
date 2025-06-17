@@ -92,12 +92,12 @@ program
 
       // 加载配置
       const configManager = new ConfigManager(options.config);
-      await configManager.load(); // 始终尝试加载配置文件
+      const loaded = await configManager.load(); // 始终尝试加载配置文件
       const config = configManager.get(); // 获取配置，可能为空
 
       // 如果使用 --strapi，则配置必须存在且有效
       if (options.strapi) {
-        if (!configManager.isConfigLoaded()) {
+        if (!loaded) {
           console.log(chalk.yellow('⚠️ 使用 --strapi 时需要配置文件。正在创建模板...'));
           const configPath = await configManager.createTemplate();
           console.log(chalk.yellow(`📝 请编辑 ${configPath} 中的Strapi设置后再使用 --strapi`));
