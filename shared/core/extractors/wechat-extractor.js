@@ -945,9 +945,16 @@ export class WeChatExtractor {
    * 环境适配的临时元素创建
    */
   createTempElement(htmlContent, documentObj = null) {
+    // 首先尝试使用传入的document对象（通常来自JSDOM）
+    if (documentObj && documentObj.createElement) {
+      const div = documentObj.createElement('div');
+      div.innerHTML = htmlContent;
+      return div;
+    }
+    
     if (this.options.environment === 'browser') {
-      // 浏览器环境 - 使用传入的document或全局document
-      const doc = documentObj || (typeof document !== 'undefined' ? document : null);
+      // 浏览器环境 - 使用全局document
+      const doc = (typeof document !== 'undefined' ? document : null);
       if (doc) {
         const div = doc.createElement('div');
         div.innerHTML = htmlContent;
