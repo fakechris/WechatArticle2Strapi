@@ -1502,4 +1502,66 @@ class NodeHttpClient {
     const { default: axios } = await import('axios');
     return axios;
   }
+
+  /**
+   * 调试模式处理 - 模拟 Strapi 处理过程但不实际发送
+   * @param {Object} article - 文章数据
+   * @returns {Promise<Object>} 模拟的Strapi结果
+   */
+  async processForDebug(article) {
+    this.log('🔍 调试模式: 模拟 Strapi 处理逻辑');
+
+    try {
+      // 模拟图片上传配置检查
+      const imageConfig = this.diagnoseStrapiImageUpload();
+      
+      // 模拟构建Strapi数据
+      const strapiData = this.buildStrapiData(article, [], null);
+      
+      // 模拟生成的结果
+      const mockResult = {
+        success: true,
+        data: {
+          data: {
+            id: 999, // 模拟ID
+            documentId: `debug-${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            publishedAt: new Date().toISOString(),
+            ...strapiData
+          },
+          meta: {}
+        },
+        id: 999,
+        uploadedImages: article.images?.length || 0,
+        processedImages: article.images?.length || 0,
+        fieldMapping: this.config.fieldMapping || {},
+        debugInfo: {
+          mode: 'debug',
+          actuallyUploaded: false,
+          simulatedFields: Object.keys(strapiData),
+          imageConfig
+        }
+      };
+
+      this.log('✅ 调试模式: Strapi 处理模拟完成', { 
+        simulatedId: mockResult.id,
+        fieldsCount: Object.keys(strapiData).length
+      });
+
+      return mockResult;
+
+    } catch (error) {
+      this.log(`❌ 调试模式处理失败: ${error.message}`, null, 'error');
+      return {
+        success: false,
+        error: error.message,
+        debugInfo: {
+          mode: 'debug',
+          actuallyUploaded: false,
+          errorOccurred: true
+        }
+      };
+    }
+  }
 } 

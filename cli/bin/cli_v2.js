@@ -182,6 +182,32 @@ program
         }
       }
 
+      // 调试模式下，即使没有 --strapi 也模拟 strapi 处理逻辑用于调试
+      if ((options.debug || options.output === 'json') && !options.strapi && config) {
+        try {
+          // 创建 Strapi 集成实例用于调试（不实际发送）
+          const { StrapiIntegration } = await import('../../shared/core/integrations/strapi-integration.js');
+          const debugStrapiIntegration = new StrapiIntegration(config, {
+            environment: 'browser',
+            verbose: options.verbose,
+            debug: options.debug,
+            dryRun: true // 标记为调试模式，不实际发送
+          });
+
+          // 模拟处理过程
+          const debugStrapiResult = await debugStrapiIntegration.processForDebug(result.article);
+          result.strapi = debugStrapiResult;
+          
+          if (options.verbose) {
+            console.log(chalk.gray('🔍 调试模式: 已模拟 Strapi 处理逻辑（未实际发送）'));
+          }
+        } catch (debugError) {
+          if (options.verbose) {
+            console.log(chalk.yellow(`⚠️ Strapi 调试模拟失败: ${debugError.message}`));
+          }
+        }
+      }
+
       // 输出结果
       if (options.output === 'json') {
         const jsonOutput = JSON.stringify(result, null, 2);
