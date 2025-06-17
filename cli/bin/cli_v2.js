@@ -182,28 +182,32 @@ program
         }
       }
 
-      // 调试模式下，即使没有 --strapi 也模拟 strapi 处理逻辑用于调试
+      // 调试模式下，即使没有 --strapi 也生成准备发送给 Strapi 的数据
       if ((options.debug || options.output === 'json') && !options.strapi && config) {
         try {
-          // 创建 Strapi 集成实例用于调试（不实际发送）
+          // 创建 Strapi 集成实例用于数据处理（不实际发送）
           const { StrapiIntegration } = await import('../../shared/core/integrations/strapi-integration.js');
           const debugStrapiIntegration = new StrapiIntegration(config, {
             environment: 'browser',
             verbose: options.verbose,
-            debug: options.debug,
-            dryRun: true // 标记为调试模式，不实际发送
+            debug: options.debug
           });
 
-          // 模拟处理过程
-          const debugStrapiResult = await debugStrapiIntegration.processForDebug(result.article);
-          result.strapi = debugStrapiResult;
+          // 生成准备发送的数据结构
+          const strapiPayload = debugStrapiIntegration.buildStrapiData(result.article, [], null);
+          result.strapi = {
+            debugMode: true,
+            payload: strapiPayload,
+            collection: config.collection,
+            endpoint: `${config.strapiUrl}/api/${config.collection}`
+          };
           
           if (options.verbose) {
-            console.log(chalk.gray('🔍 调试模式: 已模拟 Strapi 处理逻辑（未实际发送）'));
+            console.log(chalk.gray('🔍 调试模式: 已生成 Strapi 数据结构（未实际发送）'));
           }
         } catch (debugError) {
           if (options.verbose) {
-            console.log(chalk.yellow(`⚠️ Strapi 调试模拟失败: ${debugError.message}`));
+            console.log(chalk.yellow(`⚠️ Strapi 数据生成失败: ${debugError.message}`));
           }
         }
       }
