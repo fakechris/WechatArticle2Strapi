@@ -181,9 +181,13 @@ class WeChatEditor {
         });
 
         // Auto-generate slug when title changes
-        document.getElementById('article-title').addEventListener('input', (e) => {
-            const slug = this.generateSlug(e.target.value);
-            document.getElementById('article-slug').value = slug;
+        document.getElementById('article-title').addEventListener('input', async (e) => {
+            if (e.target.value.trim()) {
+                const slug = await this.generateSlugOnServer(e.target.value);
+                document.getElementById('article-slug').value = slug;
+            } else {
+                document.getElementById('article-slug').value = '';
+            }
         });
 
         // Close modals on background click
@@ -577,15 +581,16 @@ class WeChatEditor {
         document.getElementById('import-content').value = '';
     }
 
-    showPublishModal() {
+    async showPublishModal() {
         document.getElementById('publish-modal').style.display = 'flex';
         document.getElementById('article-title').focus();
         
         // Pre-fill title if we can extract one from content
         const firstHeading = this.quill.root.querySelector('h1, h2, h3');
         if (firstHeading && !document.getElementById('article-title').value) {
-            document.getElementById('article-title').value = firstHeading.textContent.trim();
-            const slug = this.generateSlug(firstHeading.textContent.trim());
+            const title = firstHeading.textContent.trim();
+            document.getElementById('article-title').value = title;
+            const slug = await this.generateSlugOnServer(title);
             document.getElementById('article-slug').value = slug;
         }
     }
@@ -646,10 +651,13 @@ class WeChatEditor {
                 markdown = this.turndownService.turndown(html);
             }
 
+            // Generate slug on server if not provided
+            const finalSlug = slug || await this.generateSlugOnServer(title);
+            
             // Create article data
             const articleData = {
                 title: title,
-                slug: slug || this.generateSlug(title),
+                slug: finalSlug,
                 description: description,
                 content: markdown,
                 htmlContent: html,
@@ -918,65 +926,43 @@ class WeChatEditor {
         }
     }
 
-    generateSlug(text) {
-        if (typeof window.generateSlug === 'function') {
-            return window.generateSlug(text);
+    async generateSlugOnServer(text) {
+        if (!text || typeof text !== 'string') {
+            return 'untitled-article';
         }
-        
-        // Enhanced slug generation with Chinese pinyin support
-        let slug = text.trim();
-        
-        // Convert Chinese characters to pinyin if pinyin library is available
-        if (typeof window.pinyin !== 'undefined') {
-            try {
-                // Check if text contains Chinese characters
-                const hasChinese = /[\u4e00-\u9fff]/.test(slug);
-                
-                if (hasChinese) {
-                    // Convert Chinese to pinyin - get flat array of pinyin
-                    const pinyinArray = window.pinyin(slug, {
-                        style: window.pinyin.STYLE_NORMAL, // No tones
-                        heteronym: false // Use most common pronunciation
-                    });
-                    
-                    // Flatten and join the pinyin
-                    slug = pinyinArray.flat().join('-');
-                }
-            } catch (error) {
-                console.warn('Pinyin conversion failed, using fallback:', error);
-                // Continue with original text
+
+        try {
+            const response = await fetch('/api/generate-slug', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ title: text })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                return result.slug || 'untitled-article';
+            } else {
+                console.error('Server slug generation failed:', response.status);
+                return this.generateSlugFallback(text);
             }
+        } catch (error) {
+            console.error('Error generating slug on server:', error);
+            return this.generateSlugFallback(text);
         }
-        
-        // Clean and format the slug
-        return slug
+    }
+
+    generateSlugFallback(text) {
+        // Simple fallback for when server is unavailable
+        return text
             .toLowerCase()
             .trim()
-            // Remove special characters but keep Chinese characters for potential processing
-            .replace(/[^\w\u4e00-\u9fff\s-]/g, '')
-            // Convert any remaining Chinese characters to pinyin as backup
-            .replace(/[\u4e00-\u9fff]/g, (match) => {
-                if (typeof window.pinyin !== 'undefined') {
-                    try {
-                        const pinyinResult = window.pinyin(match, {
-                            style: window.pinyin.STYLE_NORMAL,
-                            heteronym: false
-                        });
-                        return pinyinResult.flat().join('');
-                    } catch (e) {
-                        return '';
-                    }
-                }
-                return '';
-            })
-            // Replace spaces, underscores with hyphens
+            .replace(/[^\w\s-]/g, '')
             .replace(/[\s_]+/g, '-')
-            // Remove multiple consecutive hyphens
             .replace(/-{2,}/g, '-')
-            // Remove leading and trailing hyphens
             .replace(/^-+|-+$/g, '')
-            // Ensure slug is not empty
-            || 'untitled-article';
+            .substring(0, 50) || 'untitled-article';
     }
 }
 

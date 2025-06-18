@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const { slugify } = require('transliteration');
 
 class EditorServer {
     constructor(port = 8080, configFile = null) {
@@ -64,6 +65,12 @@ class EditorServer {
             // Field mapping endpoint
             if (pathname === '/config/fieldmapping') {
                 this.handleFieldMappingRequest(req, res);
+                return;
+            }
+
+            // Slug generation endpoint
+            if (pathname === '/api/generate-slug') {
+                this.handleSlugGenerationRequest(req, res);
                 return;
             }
 
@@ -219,6 +226,87 @@ class EditorServer {
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(mappingConfig));
+    }
+
+    async handleSlugGenerationRequest(req, res) {
+        if (req.method !== 'POST') {
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Method not allowed' }));
+            return;
+        }
+
+        try {
+            const body = await this.getRequestBody(req);
+            const { title } = JSON.parse(body);
+
+            if (!title || typeof title !== 'string') {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Title is required and must be a string' }));
+                return;
+            }
+
+            // Generate slug using same logic as CLI
+            const slug = this.generateSlug(title);
+            
+            console.log(`🏷️ Generated slug: "${title}" → "${slug}"`);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ slug }));
+
+        } catch (error) {
+            console.error('Error generating slug:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Internal server error' }));
+        }
+    }
+
+    generateSlug(text, maxLength = 50) {
+        if (!text || typeof text !== 'string') {
+            console.warn('[SLUG-DEBUG] Invalid input:', text);
+            return 'untitled';
+        }
+
+        try {
+            // Use transliteration library for Chinese to pinyin conversion (same as CLI)
+            let slug = slugify(text, {
+                lowercase: true,
+                separator: '-',
+                trim: true
+            });
+            
+            // Limit length to prevent overly long slugs
+            if (slug.length > maxLength) {
+                slug = slug.substring(0, maxLength);
+                // Try to break at word boundary
+                const lastDash = slug.lastIndexOf('-');
+                if (lastDash > maxLength * 0.7) {
+                    slug = slug.substring(0, lastDash);
+                }
+            }
+            
+            console.log(`[SLUG-DEBUG] "${text}" → "${slug}" (length: ${slug.length})`);
+            return slug || 'untitled';
+        } catch (error) {
+            console.error('[SLUG-ERROR] transliteration failed:', error);
+            
+            // Fallback implementation (same logic as CLI)
+            let slug = text
+                .toLowerCase()
+                .replace(/[^\w\s-]/g, '')
+                .replace(/[\s_-]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            
+            // Apply length limit to fallback as well
+            if (slug.length > maxLength) {
+                slug = slug.substring(0, maxLength);
+                const lastDash = slug.lastIndexOf('-');
+                if (lastDash > maxLength * 0.7) {
+                    slug = slug.substring(0, lastDash);
+                }
+            }
+            
+            return slug || 'untitled';
+        }
     }
 
     handleStaticFile(req, res, pathname) {
