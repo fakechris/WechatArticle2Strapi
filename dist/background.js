@@ -702,6 +702,13 @@ class StrapiIntegration {
       }
     }
     
+    // 设置为草稿状态（Strapi v4）
+    // 方法1：完全移除publishedAt字段（推荐）
+    delete data.publishedAt;
+    // 方法2：如果方法1不行，尝试设置为undefined或false
+    // data.publishedAt = undefined;
+    this.log('设置文章为草稿状态（移除publishedAt字段）', { publishedAtRemoved: true });
+    
     return data;
   }
 
@@ -1623,27 +1630,53 @@ class StrapiIntegration {
       this.logDebugInfo();
       
       const httpClient = this.getHttpClient();
-      const endpoint = `${this.config.strapiUrl}api/${this.config.collection}`;
+      
+      // 🔥 新增：使用不同的策略创建草稿
+      let endpoint = `${this.config.strapiUrl}api/${this.config.collection}`;
+      let requestBody = { data };
+      
+      // 策略1：使用 status=draft 查询参数（Strapi v4推荐）
+      const draftEndpoint = `${endpoint}?status=draft`;
       
       this.log('请求详情', {
-        url: endpoint,
+        baseUrl: endpoint,
+        draftUrl: draftEndpoint,
         method: 'POST',
         tokenPrefix: this.config.token.substring(0, 20) + '...',
         tokenLength: this.config.token.length,
-        dataKeys: Object.keys(data)
+        dataKeys: Object.keys(data),
+        strategy: 'draft endpoint with status=draft parameter'
       });
       
-      // 发送请求
-      const response = await httpClient.post(
-        endpoint,
-        { data },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.config.token}`,
-            'Content-Type': 'application/json'
+      // 先尝试使用draft端点
+      let response;
+      try {
+        this.log('尝试使用draft端点创建草稿');
+        response = await httpClient.post(
+          draftEndpoint,
+          requestBody,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.config.token}`,
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
+        );
+      } catch (draftError) {
+        this.log('draft端点失败，尝试普通端点', { error: draftError.message });
+        
+        // 如果draft端点失败，使用普通端点
+        response = await httpClient.post(
+          endpoint,
+          requestBody,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.config.token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+      }
       
       this.log('响应状态', {
         status: response.status,
