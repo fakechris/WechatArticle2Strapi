@@ -130,6 +130,7 @@ export class PlaywrightAdapter extends CLIAdapter {
    * @returns {Promise<string>} HTML内容
    */
   async fetchHtmlContent(url) {
+    this.log('Entering fetchHtmlContent', { url }, 'debug');
     this.log('使用 Playwright 获取页面内容...', { url });
 
     let page = null;
@@ -153,11 +154,12 @@ export class PlaywrightAdapter extends CLIAdapter {
       page.setDefaultNavigationTimeout(this.playwrightOptions.waitTimeout);
 
       // 导航到页面
-      this.log('导航到页面...', { url });
+      this.log('Attempting page.goto()', { url }, 'debug');
       const response = await page.goto(url, { 
         waitUntil: 'domcontentloaded',
         timeout: this.playwrightOptions.waitTimeout 
       });
+      this.log(`page.goto() completed. Response status: ${response ? response.status() : 'N/A'}`, null, 'debug');
 
       if (!response || !response.ok()) {
         throw new Error(`页面加载失败: ${response ? response.status() : 'no response'}`);
@@ -177,7 +179,7 @@ export class PlaywrightAdapter extends CLIAdapter {
       return htmlContent;
 
     } catch (error) {
-      this.log(`获取页面内容失败: ${error.message}`, { url }, 'error');
+      this.log(`Error in fetchHtmlContent (possibly page.goto or subsequent logic): ${error.message}`, { url, stack: error.stack }, 'error');
       throw error;
     } finally {
       // 关闭页面
@@ -219,135 +221,47 @@ export class PlaywrightAdapter extends CLIAdapter {
         return;
       }
 
-      // 金融八卦女等动态网站特殊处理
-      if (urlObj.hostname.includes('jinrongbaguanv.com')) {
-        this.log('检测到金融八卦女网站，使用专门的等待策略...');
-        
-        await this.waitForJinrongbaguanvContent(page);
-        return;
+      // 通用等待逻辑
+      this.log('Phase 2: Applying general content waiting strategies...');
+      if (url.includes('mp.weixin.qq.com')) {
+        // 针对微信公众号文章的特殊等待逻辑 (保持这个，因为微信页面结构非常特殊)
+        this.log('Using WeChat specific waiting strategy.');
+        await this.waitForWeChatContent(page);
+      } else {
+        // 对于其他所有网站，使用增强的通用等待逻辑
+        this.log('Using enhanced general waiting strategy.');
+        await this.waitForGeneralContent(page);
       }
 
-      // 如果指定了等待选择器
-      if (this.playwrightOptions.waitForSelector) {
-        this.log(`等待选择器: ${this.playwrightOptions.waitForSelector}`);
-        await page.waitForSelector(this.playwrightOptions.waitForSelector, {
-          timeout: this.playwrightOptions.waitTimeout
-        });
-        this.log('选择器已出现');
-        return;
-      }
-
-      // 通用等待策略：多重策略确保内容完全加载
-      await this.waitForGeneralContent(page);
-
-    } catch (error) {
-      this.log(`等待页面内容时发生错误: ${error.message}`, null, 'warn');
-      // 不抛出错误，允许继续处理部分加载的内容
-    }
-  }
-
-  /**
-   * 金融八卦女网站专门的等待策略
-   */
-  async waitForJinrongbaguanvContent(page) {
-    try {
-      this.log('开始等待金融八卦女网站内容加载...');
-
-      // 第一阶段：等待基础页面加载
-      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => this.log('DOM content loaded timeout, continuing...', null, 'debug'));
-      this.log('DOM内容已加载');
-
-      // 第二阶段：等待更多具体的内容元素
-      const contentLoaded = await Promise.race([
-        // 方案1：等待具体的文章内容（更长的内容）
-        page.waitForFunction(() => {
-          const selectors = ['.article-content', '.content', '.detail-content', '.news-content', '.main-content', '.post-content', '.text-content', '.article-body', 'main', 'article', '[class*="content"]', '[class*="detail"]', '[class*="article"]', '[class*="news"]'];
-          for (const selector of selectors) {
-            const elements = document.querySelectorAll(selector);
-            for (const element of elements) {
-              if (element && element.innerText) {
-                const text = element.innerText.trim();
-                if (text.length > 1000 && (text.includes('降准降息') || text.includes('潘功胜') || text.includes('三大类政策') || text.includes('十项措施'))) {
-                  console.log('找到匹配内容区域:', selector, '长度:', text.length);
-                  return true;
-                }
-              }
-            }
-          }
-          return false;
-        }, { timeout: this.playwrightOptions.waitTimeout }).catch(() => {
-          this.log('Wait for function timed out', null, 'debug');
-          return false;
-        }),
-
-        // 方案2：等待网络空闲
-        page.waitForLoadState('networkidle', { timeout: Math.min(this.playwrightOptions.waitTimeout, 20000) })
-          .then(() => {
-            this.log('网络空闲状态达成');
-            return true;
-          }).catch(() => {
-            this.log('Wait for network idle timed out', null, 'debug');
-            return false;
-          }),
-
-        // 方案3：等待图片加载（如果启用）
-        this.playwrightOptions.loadImages ?
-          page.waitForFunction(() => {
-            const images = Array.from(document.images);
-            const loadedImages = images.filter(img => img.complete && img.naturalHeight > 0);
-            return images.length > 0 && loadedImages.length >= Math.min(images.length, 2);
-          }, { timeout: Math.min(this.playwrightOptions.waitTimeout, 15000) })
-            .then(() => {
-              this.log('图片已加载');
-              return true;
-            }).catch(() => {
-              this.log('Wait for images timed out', null, 'debug');
-              return false;
-            }) :
-          Promise.resolve(true)
-      ]);
-
-      if (contentLoaded) {
-        this.log('内容匹配成功');
-      }
-
-      // 第三阶段：额外等待确保所有动态内容加载完成
-      const additionalWait = Math.max(3000, this.playwrightOptions.waitTimeout * 0.1);
-      this.log(`额外等待 ${additionalWait}ms 确保动态内容完全加载...`);
+      // Phase 3: Additional fixed wait for dynamic content
+      const additionalWait = Math.max(2000, this.playwrightOptions.waitTimeout * 0.1); // Min 2s wait
+      this.log(`Phase 3: Adding an additional wait of ${additionalWait}ms for any remaining dynamic content...`);
       await new Promise(resolve => setTimeout(resolve, additionalWait));
-
-      this.log('准备验证内容质量 (pre-evaluate)');
-      // 验证内容质量
+      
+      // Phase 4: Final content quality check (logging only)
+      this.log('Phase 4: Performing final content quality check (logging only)...');
       const contentInfo = await page.evaluate(() => {
-        console.log('[evaluate] 开始验证内容质量');
         const body = document.body;
         const bodyText = body ? body.innerText : '';
-        const articleKeywords = ['降准降息', '潘功胜', '三大类政策', '十项措施'];
-        const hasKeywords = articleKeywords.some(keyword => bodyText.includes(keyword));
-        
-        const result = {
+        return {
           bodyTextLength: bodyText.length,
-          hasKeywords: hasKeywords,
           title: document.title
         };
-        console.log('[evaluate] 内容质量验证完成, 结果:', JSON.stringify(result));
-        return result;
       });
-      
-      this.log('内容质量验证成功 (post-evaluate)');
-      this.log('内容验证结果', contentInfo);
-      this.log('金融八卦女网站内容已加载');
+      this.log('Final content check results:', contentInfo);
 
+      this.log('All page content waiting strategies completed.');
     } catch (error) {
-      this.log(`金融八卦女网站等待策略出现错误: ${error.message}`, null, 'warn');
-      this.log('使用已加载内容继续处理', null, 'warn');
+      this.log(`Page waiting strategy encountered an error: ${error.message}`, null, 'warn');
+      // Even if waiting strategies fail, attempt to continue extraction
+      this.log('Attempting to proceed with currently loaded content.', null, 'warn');
     }
   }
-
   /**
    * 通用内容等待策略
    */
   async waitForGeneralContent(page) {
+    this.log('Entering waitForGeneralContent', null, 'debug');
     try {
       // 多重策略确保内容加载
       await Promise.all([
@@ -356,8 +270,11 @@ export class PlaywrightAdapter extends CLIAdapter {
           .catch(() => this.log('网络空闲等待超时', null, 'debug')),
         
         // 策略2：等待主要内容区域
-        this.waitForCommonContentSelectors(page)
-          .catch(() => this.log('内容选择器等待超时', null, 'debug')),
+        (async () => { // IIFE to allow await inside Promise.all and keep logging precise
+          this.log('waitForGeneralContent: Attempting to call waitForCommonContentSelectors', null, 'debug');
+          await this.waitForCommonContentSelectors(page);
+        })()
+          .catch((err) => this.log(`waitForGeneralContent: Error in waitForCommonContentSelectors or its promise: ${err.message}`, null, 'warn')),
         
         // 策略3：等待文档就绪和基本内容
         page.waitForFunction(() => {
@@ -365,7 +282,22 @@ export class PlaywrightAdapter extends CLIAdapter {
                  document.body && 
                  document.body.innerText.length > 100;
         }, { timeout: this.playwrightOptions.waitTimeout })
-          .catch(() => this.log('文档就绪等待超时', null, 'debug'))
+          .catch(() => this.log('文档就绪等待超时', null, 'debug')),
+
+        // 策略4：等待图片加载（如果启用）
+        this.playwrightOptions.loadImages ?
+          page.waitForFunction(() => {
+            const images = Array.from(document.images);
+            const loadedImages = images.filter(img => img.complete && img.naturalHeight > 0);
+            // Wait for at least a few images to load if there are many, or all if there are few.
+            return images.length > 0 && loadedImages.length >= Math.min(images.length, 2); 
+          }, { timeout: Math.min(this.playwrightOptions.waitTimeout, 15000) })
+            .then(() => {
+              this.log('图片已加载');
+            }).catch(() => {
+              this.log('Wait for images timed out', null, 'debug');
+            }) :
+          Promise.resolve(true) // If not loading images, resolve immediately
       ]);
 
       // 额外等待时间让动态内容完成渲染
@@ -385,6 +317,7 @@ export class PlaywrightAdapter extends CLIAdapter {
    * @returns {Promise<void>}
    */
   async waitForCommonContentSelectors(page) {
+    this.log('Entering waitForCommonContentSelectors', null, 'debug');
     const commonSelectors = [
       'article',
       'main',
@@ -398,38 +331,35 @@ export class PlaywrightAdapter extends CLIAdapter {
     ];
 
     try {
-      // 等待任意一个内容选择器出现并有足够内容
-      await page.waitForFunction((selectors) => {
-        return selectors.some(selector => {
-          const elements = document.querySelectorAll(selector);
-          for (const element of elements) {
-            if (element && element.textContent && element.textContent.trim().length > 200) {
-              return true;
-            }
-          }
-          return false;
-        });
-      }, commonSelectors, { timeout: Math.min(this.playwrightOptions.waitTimeout, 10000) });
-      
-      this.log('检测到主要内容区域');
+      this.log('Attempting SIMPLIFIED primary waitForFunction in waitForCommonContentSelectors...', null, 'debug');
+      await page.waitForFunction(() => {
+        console.log('[PW DEBUG INJECTED] Checking body innerText length in SIMPLIFIED waitForCommonContentSelectors (target: >200). Current length: ' + (document.body ? document.body.innerText.length : 'N/A'));
+        const result = document.body && document.body.innerText && document.body.innerText.length > 200;
+        console.log('[PW DEBUG INJECTED] Result of body.innerText.length > 200: ' + result);
+        return result;
+      }, { timeout: Math.min(this.playwrightOptions.waitTimeout, 10000) });
+      this.log('SIMPLIFIED primary waitForFunction (target: >200) in waitForCommonContentSelectors completed successfully.', null, 'debug');
     } catch (error) {
-      // 尝试更宽松的条件
+      this.log(`SIMPLIFIED primary waitForFunction in waitForCommonContentSelectors FAILED: ${error.message}`, null, 'warn');
+      this.log('Attempting fallback: checking for sufficient body text length (original fallback logic)...', null, 'debug');
       try {
         await page.waitForFunction(() => {
-          // 检查页面是否有足够的文本内容
-          const bodyText = document.body ? document.body.innerText : '';
-          return bodyText.length > 500;
-        }, { timeout: 5000 });
-        
-        this.log('检测到足够的页面文本内容');
+          console.log('[PW DEBUG INJECTED FALLBACK] Checking body innerText length. Current length: ' + (document.body ? document.body.innerText.length : 'N/A'));
+          const result = document.body && document.body.innerText && document.body.innerText.length > 500; // Original fallback length check
+          console.log('[PW DEBUG INJECTED FALLBACK] Result of body.innerText.length > 500: ' + result);
+          return result;
+        }, { timeout: 5000 }); // Original fallback timeout
+        this.log('Successfully found sufficient body text length (via fallback).', null, 'debug');
       } catch (secondError) {
-        this.log('未检测到常见内容选择器，继续执行', null, 'debug');
+        this.log(`Fallback waitForFunction in waitForCommonContentSelectors FAILED: ${secondError.message}`, null, 'warn');
+        this.log('Neither simplified primary nor fallback detected sufficient content in waitForCommonContentSelectors. Continuing.', null, 'debug');
       }
     }
+    this.log('Exiting waitForCommonContentSelectors', null, 'debug');
   }
 
   /**
-   * 重写 extractFromUrl 方法以确保浏览器正确关闭
+   * 主提取方法，重写以适配Playwright.
    * @param {string} url - 文章URL
    * @returns {Promise<Object>} 提取结果
    */
@@ -680,9 +610,9 @@ export class PlaywrightAdapter extends CLIAdapter {
           });
           
           // 关键词检查
-          const articleKeywords = ['降准降息', '潘功胜', '三大类政策', '十项措施'];
-          const hasKeywords = articleKeywords.some(keyword => actualVisibleText.includes(keyword));
-          const keywordMatches = articleKeywords.filter(keyword => actualVisibleText.includes(keyword));
+          // Keyword-specific logic removed for general applicability
+          // const hasKeywords = articleKeywords.some(keyword => actualVisibleText.includes(keyword));
+          // const keywordMatches = articleKeywords.filter(keyword => actualVisibleText.includes(keyword));
           
           // 图片分析
           const images = Array.from(document.images);

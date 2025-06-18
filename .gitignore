@@ -52,3 +52,4 @@ demo-*.js
 temp/*
 !temp/.gitkeep
 output/
+*.json

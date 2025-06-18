@@ -5,13 +5,25 @@
 
 import axios from 'axios';
 import chalk from 'chalk';
+import fs from 'fs';
+import fsAsync from 'fs/promises';
 import { createArticlePipeline } from '../../../shared/core/index.js';
-import fs from 'fs/promises';
 import path from 'path';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 export class CLIAdapter {
   constructor(options = {}) {
+    this.logFilePath = '/Users/chris/workspace/WechatArticle2Strapi/debug.log';
+    try {
+      // Clear or create the log file at the start of each run
+      if (fs.existsSync(this.logFilePath)) {
+        fs.unlinkSync(this.logFilePath);
+      }
+      fs.writeFileSync(this.logFilePath, `Log started at ${new Date().toISOString()}\n`);
+    } catch (err) {
+      console.error('Failed to initialize log file:', err);
+    }
+
     this.options = {
       verbose: false,
       debug: false,
@@ -271,7 +283,7 @@ export class CLIAdapter {
 
     try {
       this.log(`Attempting to create images directory: ${imagesDir}`, null, 'debug');
-      await fs.mkdir(imagesDir, { recursive: true });
+      await fsAsync.mkdir(imagesDir, { recursive: true });
       this.log(`Successfully created or ensured images directory exists: ${imagesDir}`, null, 'debug');
     } catch (error) {
       const criticalErrorMsg = `CRITICAL: Failed to create image directory ${imagesDir}: ${error.message}`;
@@ -348,7 +360,7 @@ export class CLIAdapter {
               timeout: this.options.timeout || 30000,
               headers: { 'User-Agent': this.options.userAgent || 'Mozilla/5.0' }
             });
-            await fs.writeFile(finalLocalAbsPath, response.data);
+            await fsAsync.writeFile(finalLocalAbsPath, response.data);
             downloadedThisTurn = true;
             this.log(`Successfully downloaded ${safeImageName} from ${sourceForDownload}`, null, 'debug');
         } else {
@@ -568,12 +580,33 @@ export class CLIAdapter {
     if (!this.options.verbose && level === 'info') return;
     if (!this.options.debug && level === 'debug') return;
     const timestamp = new Date().toLocaleTimeString();
+    const isoTimestamp = new Date().toISOString();
     const prefix = `[${timestamp}] [CLIAdapter]`;
+    const filePrefix = `[${isoTimestamp}] [CLIAdapter]`; // Use ISO for file logs for better sorting
+
+    // File logging
+    try {
+      let fileMessage = `${filePrefix} [${level.toUpperCase()}] ${message}`;
+      if (data) {
+        // Stringify data carefully, handling circular references and depth
+        const dataString = JSON.stringify(data, (key, value) => {
+          if (value instanceof Error) {
+            return { message: value.message, stack: value.stack };
+          }
+          return value;
+        }, 2); // Indent for readability
+        fileMessage += ` ${dataString}`;
+      }
+      fs.appendFileSync(this.logFilePath, fileMessage + '\n');
+    } catch (err) {
+      console.error('Failed to write to log file:', err);
+    }
+
     switch (level) {
       case 'error': console.error(chalk.red(`${prefix} ❌ ${message}`), data || ''); break;
-      case 'warn': console.warn(chalk.yellow(`${prefix} ⚠️  ${message}`), data || ''); break;
-      case 'debug': console.log(chalk.gray(`${prefix} 🔍 ${message}`), data || ''); break;
-      default: console.log(chalk.blue(`${prefix} ${message}`), data || '');
+      case 'warn': console.error(chalk.yellow(`${prefix} ⚠️  ${message}`), data || ''); break;
+      case 'debug': console.error(chalk.gray(`${prefix} 🔍 ${message}`), data || ''); break;
+      default: console.error(chalk.blue(`${prefix} ${message}`), data || '');
     }
   }
 }
