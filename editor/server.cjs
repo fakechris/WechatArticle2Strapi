@@ -44,6 +44,12 @@ class EditorServer {
                 return;
             }
 
+            // Slug generation endpoint (must be before /api/ proxy)
+            if (pathname === '/api/generate-slug') {
+                this.handleSlugGenerationRequest(req, res);
+                return;
+            }
+
             // API proxy endpoints
             if (pathname.startsWith('/api/')) {
                 this.handleApiProxy(req, res, pathname);
@@ -65,12 +71,6 @@ class EditorServer {
             // Field mapping endpoint
             if (pathname === '/config/fieldmapping') {
                 this.handleFieldMappingRequest(req, res);
-                return;
-            }
-
-            // Slug generation endpoint
-            if (pathname === '/api/generate-slug') {
-                this.handleSlugGenerationRequest(req, res);
                 return;
             }
 
