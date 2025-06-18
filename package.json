@@ -1,6 +1,6 @@
 {
   "name": "wechatarticle2strapi",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "A Chrome extension that converts WeChat articles into entries in a Strapi CMS. This project follows the requirements outlined in [`PRD.md`](PRD.md).",
   "type": "module",
   "main": "RESET_SETTINGS.js",
