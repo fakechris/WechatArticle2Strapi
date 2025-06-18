@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WeChat Article Editor</title>
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="theme-toggle" id="theme-toggle" title="Toggle theme">
+        🌙
+    </div>
+    
+    <div class="container">
+        <header>
+            <h1>WeChat Article Editor</h1>
+            <div class="toolbar">
+                <button id="import-btn">Import HTML/Markdown</button>
+                <button id="preview-btn">Preview</button>
+                <button id="settings-btn">Settings</button>
+                <button id="publish-btn">Publish to Strapi</button>
+            </div>
+        </header>
+
+        <div class="editor-section">
+            <div class="input-panel">
+                <div class="panel-header">
+                    <h3>Editor</h3>
+                    <div class="editor-controls">
+                        <button id="visual-mode" class="mode-btn active">Visual</button>
+                        <button id="source-mode" class="mode-btn">Source</button>
+                        <button id="upload-image" class="upload-btn">📷 Upload Image</button>
+                        <select id="upload-method" class="upload-method">
+                            <option value="base64">Base64 (No Server)</option>
+                            <option value="strapi">Upload to Strapi</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="editor-container"></div>
+                <textarea id="source-editor" style="display: none;" placeholder="Edit markdown source code here..."></textarea>
+                <input type="file" id="image-upload" accept="image/*" multiple style="display: none;">
+            </div>
+            
+            <div class="preview-panel">
+                <h3>WeChat Preview</h3>
+                <div id="preview-container" class="wechat-article"></div>
+            </div>
+        </div>
+
+        <div class="import-modal" id="import-modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Import Content</h3>
+                <textarea id="import-content" placeholder="Paste your HTML or Markdown content here..."></textarea>
+                <div class="modal-buttons">
+                    <button id="import-confirm">Import</button>
+                    <button id="import-cancel">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="publish-modal" id="publish-modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Publish to Strapi</h3>
+                <input type="text" id="article-title" placeholder="Article Title" required>
+                <input type="text" id="article-slug" placeholder="Article Slug (auto-generated)">
+                <textarea id="article-description" placeholder="Article Description"></textarea>
+                <div class="modal-buttons">
+                    <button id="publish-confirm">Publish as Draft</button>
+                    <button id="publish-cancel">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-modal" id="settings-modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Settings</h3>
+                <div class="settings-section">
+                    <h4>Strapi Configuration</h4>
+                    <input type="text" id="strapi-url" placeholder="Strapi Base URL (e.g., http://localhost:1337)">
+                    <input type="password" id="strapi-token" placeholder="API Token">
+                    <input type="text" id="strapi-collection" placeholder="Collection Name (e.g., articles)">
+                    <button id="test-connection" class="test-btn">Test Connection</button>
+                    <div id="connection-status" class="status-message"></div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="settings-save">Save Settings</button>
+                    <button id="settings-cancel">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="image-processing-modal" id="image-processing-modal" style="display: none;">
+            <div class="modal-content image-dialog">
+                <h3>🖼️ Process Pasted Images</h3>
+                <p id="image-count-text">Found <span id="image-count">0</span> images in pasted content</p>
+                
+                <div class="image-options">
+                    <div class="option-card" data-action="keep">
+                        <div class="option-icon">🔗</div>
+                        <div class="option-title">Keep Original URLs</div>
+                        <div class="option-desc">Preserve original image sources (fastest)</div>
+                    </div>
+                    
+                    <div class="option-card" data-action="upload">
+                        <div class="option-icon">☁️</div>
+                        <div class="option-title">Upload to Strapi</div>
+                        <div class="option-desc">Upload images to your Strapi media library</div>
+                    </div>
+                    
+                    <div class="option-card" data-action="base64">
+                        <div class="option-icon">📦</div>
+                        <div class="option-title">Convert to Base64</div>
+                        <div class="option-desc">Embed images directly in content</div>
+                    </div>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button id="image-process-confirm" disabled>Process Images</button>
+                    <button id="image-process-cancel">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pinyin@2.11.2/lib/pinyin.js"></script>
+    <script src="config.js"></script>
+    <script src="strapi-browser.js"></script>
+    <script src="editor.js"></script>
+<script src="config-loader.js"></script>
+</body>
+</html>

@@ -84,9 +84,11 @@ The project supports both Chrome Extension and CLI modes:
 - REST API integration with configurable endpoints
 - Automatic slug generation using the `slug` library
 - Field mapping system for flexible Strapi schema support
-- **Draft Mode Support**: Articles are created as drafts by default in Strapi v4 (CLI mode)
+- **Draft Mode Support**: Articles are created as drafts by default in Strapi v4 (both CLI and Editor modes)
   - Uses dual strategy: removes `publishedAt` field + `?status=draft` query parameter
   - Fallback mechanism ensures compatibility across different Strapi v4 versions
+  - **Field Mapping**: Uses `.articlerc.json` configuration for proper field name mapping to Strapi schema
+  - **Security Architecture**: Browser communicates only with local proxy server, never directly with Strapi
 
 ### Build System
 - Webpack 5 for bundling Node.js modules for browser environment
@@ -106,6 +108,8 @@ The project supports both Chrome Extension and CLI modes:
 - `src/background.js:30-50` - Content sanitization and extension UI removal
 - `shared/core/integrations/strapi-integration.js:228-232` - Draft mode implementation (removes publishedAt field)
 - `shared/core/integrations/strapi-integration.js:1154-1201` - Draft endpoint strategy with fallback
+- `editor/strapi-browser.js:52-103` - Editor draft mode implementation with field mapping
+- `editor/server.cjs:198-222` - Field mapping endpoint serving .articlerc.json configuration
 - `webpack.config.js:16-27` - Node.js module fallbacks for browser environment
 - `manifest.json:24-31` - Content script configuration for early DOM injection
 
